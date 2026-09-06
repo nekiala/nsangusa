@@ -1,0 +1,41 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "nsangusa.fullname" . }}
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ required "ingress TLS secretName is required" .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ required "ingress host is required" .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- range .Values.ingress.backendPaths }}
+          - path: {{ . | quote }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "nsangusa.fullname" $ }}-backend
+                port:
+                  name: http
+          {{- end }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "nsangusa.fullname" . }}-frontend
+                port:
+                  name: http
+{{- end }}

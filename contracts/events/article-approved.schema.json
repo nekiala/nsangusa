@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.nsangusa.invalid/events/article-approved.schema.json",
+  "title": "ArticleApproved",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "const": "ArticleApproved"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["articleId", "approvedBy"],
+          "properties": {
+            "articleId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "approvedBy": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
+

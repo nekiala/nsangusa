@@ -1,0 +1,58 @@
+# Copy into an environment-protected HELM_VALUES secret; never add credentials here.
+backend:
+  image:
+    repository: ghcr.io/example/nsangusa/backend
+
+frontend:
+  image:
+    repository: ghcr.io/example/nsangusa/frontend
+
+secret:
+  existingSecret: nsangusa-runtime
+
+backendConfig:
+  DATABASE_URL: jdbc:postgresql://db.example.com:5432/news?sslmode=verify-full
+  KAFKA_BOOTSTRAP_SERVERS: kafka.example.com:9093
+  REDIS_HOST: redis.example.com
+  PUBLIC_BASE_URL: https://news.example.com
+  S3_ENDPOINT: https://s3.example.com
+  S3_REGION: eu-west-1
+  S3_BUCKET: nsangusa-media
+  OIDC_ISSUER_URI: https://identity.example.com
+  OIDC_CLIENT_ID: nsangusa
+  MAIL_HOST: smtp.example.com
+  MAIL_USERNAME: nsangusa
+  NEWSLETTER_FROM_ADDRESS: news@example.com
+
+ingress:
+  className: ingress-nginx
+  host: news.example.com
+  tls:
+    secretName: nsangusa-tls
+
+otelCollector:
+  exporter:
+    endpoint: otel.example.com:4317
+    existingSecret: nsangusa-otel-exporter
+
+networkPolicy:
+  # Prefer specific stable provider or egress-gateway CIDRs. These documentation
+  # addresses must be replaced; do not use 0.0.0.0/0.
+  backendExternalEgress:
+    - cidr: 192.0.2.10/32
+      ports:
+        - port: 5432
+    - cidr: 192.0.2.11/32
+      ports:
+        - port: 9093
+    - cidr: 192.0.2.12/32
+      ports:
+        - port: 6379
+    - cidr: 192.0.2.0/24
+      ports:
+        - port: 443
+        - port: 587
+  otelExternalEgress:
+    - cidr: 192.0.2.20/32
+      ports:
+        - port: 4317

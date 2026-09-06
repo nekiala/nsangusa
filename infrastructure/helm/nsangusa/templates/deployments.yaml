@@ -1,0 +1,234 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-backend
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  {{- if not .Values.backend.autoscaling.enabled }}
+  replicas: {{ .Values.backend.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 3
+  minReadySeconds: {{ .Values.backend.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.backend.progressDeadlineSeconds }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "nsangusa.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+        {{- with .Values.global.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.global.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "nsangusa.backendServiceAccount" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.backend.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.backend.podSecurityContext | nindent 8 }}
+      {{- if .Values.backend.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.backend.topologySpread.maxSkew }}
+          topologyKey: {{ .Values.backend.topologySpread.topologyKey }}
+          whenUnsatisfiable: {{ .Values.backend.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "nsangusa.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: backend
+      {{- end }}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backend
+          image: {{ include "nsangusa.image" (dict "image" .Values.backend.image "environment" .Values.global.environment) | quote }}
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.service.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "nsangusa.fullname" . }}-backend
+          {{- with .Values.secret.env }}
+          env:
+            {{- range $name, $key := . }}
+            - name: {{ $name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.secret.existingSecret }}
+                  key: {{ $key }}
+            {{- end }}
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            {{- toYaml .Values.backend.probes.startup | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            {{- toYaml .Values.backend.probes.readiness | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            {{- toYaml .Values.backend.probes.liveness | nindent 12 }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.backend.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-frontend
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  {{- if not .Values.frontend.autoscaling.enabled }}
+  replicas: {{ .Values.frontend.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 3
+  minReadySeconds: {{ .Values.frontend.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.frontend.progressDeadlineSeconds }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        {{- include "nsangusa.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: frontend
+        {{- with .Values.global.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.global.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "nsangusa.frontendServiceAccount" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.frontend.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.frontend.podSecurityContext | nindent 8 }}
+      {{- if .Values.frontend.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.frontend.topologySpread.maxSkew }}
+          topologyKey: {{ .Values.frontend.topologySpread.topologyKey }}
+          whenUnsatisfiable: {{ .Values.frontend.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "nsangusa.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: frontend
+      {{- end }}
+      {{- with .Values.frontend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: frontend
+          image: {{ include "nsangusa.image" (dict "image" .Values.frontend.image "environment" .Values.global.environment) | quote }}
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.service.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "nsangusa.fullname" . }}-frontend
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            {{- toYaml .Values.frontend.probes.startup | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            {{- toYaml .Values.frontend.probes.readiness | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            {{- toYaml .Values.frontend.probes.liveness | nindent 12 }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.frontend.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /app/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: next-cache
+          emptyDir:
+            sizeLimit: 512Mi

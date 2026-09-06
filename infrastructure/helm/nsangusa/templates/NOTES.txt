@@ -1,0 +1,16 @@
+Release {{ .Release.Name }} targets {{ .Values.global.environment }}.
+
+Verify:
+  kubectl rollout status deployment --selector=app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }}
+  kubectl get ingress,networkpolicy,pdb,hpa -n {{ .Release.Namespace }}
+{{- if .Values.migration.enabled }}
+  kubectl logs job/{{ include "nsangusa.fullname" . }}-migrate -n {{ .Release.Namespace }}
+{{- end }}
+
+Before non-development deployment:
+- use immutable image digests;
+- set external dependency endpoints and existing Secret references;
+- set ingress host/class/TLS secret;
+- configure explicit external egress CIDRs or a platform egress proxy/policy;
+- configure an authenticated TLS OTLP exporter;
+- verify provider accounts, scopes, quotas, retention, and deletion behavior.

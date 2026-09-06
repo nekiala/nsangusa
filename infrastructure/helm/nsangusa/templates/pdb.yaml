@@ -1,0 +1,47 @@
+{{- if .Values.backend.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-backend
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.backend.pdb.minAvailable }}
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+---
+{{- end }}
+{{- if .Values.frontend.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-frontend
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.frontend.pdb.minAvailable }}
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+{{- end }}
+{{- if and .Values.otelCollector.enabled .Values.otelCollector.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-otel-collector
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.otelCollector.pdb.minAvailable }}
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: otel-collector
+{{- end }}

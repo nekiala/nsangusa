@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.nsangusa.invalid/events/common.schema.json",
+  "title": "Nsangusa event payload definitions",
+  "$defs": {
+    "sourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourcePostId", "account", "postId", "url", "publishedAt"],
+      "properties": {
+        "sourcePostId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "account": {
+          "type": "string",
+          "minLength": 1
+        },
+        "postId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "publishedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "classification", "supportingSourceIds"],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "classification": {
+          "type": "string",
+          "minLength": 1
+        },
+        "supportingSourceIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    }
+  }
+}
+

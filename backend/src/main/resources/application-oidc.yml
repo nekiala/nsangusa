@@ -1,0 +1,22 @@
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          primary:
+            provider: primary
+            client-id: ${OIDC_CLIENT_ID}
+            client-secret: ${OIDC_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope: openid,profile,email
+        provider:
+          primary:
+            issuer-uri: ${OIDC_ISSUER_URI}
+
+news:
+  identity:
+    oidc-success-url: ${OIDC_SUCCESS_URL:/}
+    oidc:
+      require-verified-email: ${OIDC_REQUIRE_VERIFIED_EMAIL:true}
+      roles-claim: ${OIDC_ROLES_CLAIM:roles}

@@ -1,0 +1,5 @@
+import { contentApi, siteUrl } from "@/lib/content";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 3600;
+export async function GET() { const articles = await contentApi.latest(); const escape = (value: string) => value.replace(/[<>&'"]/g, (character) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", "\"": "&quot;" })[character] || character); const items = articles.map((article) => `<item><title>${escape(article.title)}</title><link>${siteUrl}/articles/${article.slug}</link><guid>${siteUrl}/articles/${article.slug}</guid><pubDate>${new Date(article.publishedAt).toUTCString()}</pubDate><description>${escape(article.dek)}</description></item>`).join(""); return new Response(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Nsangusa</title><link>${siteUrl}</link><description>Independent reporting and essays.</description>${items}</channel></rss>`, { headers: { "Content-Type": "application/rss+xml; charset=utf-8", "Cache-Control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400" } }); }

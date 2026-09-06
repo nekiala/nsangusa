@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.nsangusa.invalid/events/x-post-discovered.schema.json",
+  "title": "XPostDiscovered",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "const": "XPostDiscovered"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["monitoredAccountId", "postId", "accountId", "handle", "canonicalUrl", "permittedText", "publishedAt"],
+          "properties": {
+            "monitoredAccountId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "postId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "accountId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "handle": {
+              "type": "string",
+              "minLength": 1
+            },
+            "canonicalUrl": {
+              "type": "string",
+              "format": "uri"
+            },
+            "permittedText": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 10000
+            },
+            "publishedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
+

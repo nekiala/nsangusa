@@ -1,0 +1,218 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-default-deny
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-backend-ingress
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressNamespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressPodSelector | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-frontend-ingress
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressNamespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressPodSelector | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 3000}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-frontend-egress
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [frontend]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dnsNamespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dnsPodSelector | nindent 14 }}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "nsangusa.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: backend
+      ports:
+        - {protocol: TCP, port: 8080}
+    {{- if .Values.otelCollector.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "nsangusa.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: otel-collector
+      ports:
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 4318}
+    {{- end }}
+    {{- range .Values.networkPolicy.frontendExternalEgress }}
+    - to:
+        - ipBlock:
+            cidr: {{ .cidr | quote }}
+            {{- with .except }}
+            except:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+      ports:
+        {{- range .ports }}
+        - protocol: {{ default "TCP" .protocol }}
+          port: {{ .port }}
+        {{- end }}
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-backend-egress
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [backend, migration]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dnsNamespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dnsPodSelector | nindent 14 }}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    {{- if .Values.otelCollector.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "nsangusa.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: otel-collector
+      ports:
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 4318}
+    {{- end }}
+    {{- range .Values.networkPolicy.backendExternalEgress }}
+    - to:
+        - ipBlock:
+            cidr: {{ .cidr | quote }}
+            {{- with .except }}
+            except:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+      ports:
+        {{- range .ports }}
+        - protocol: {{ default "TCP" .protocol }}
+          port: {{ .port }}
+        {{- end }}
+    {{- end }}
+{{- if .Values.otelCollector.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-otel
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: otel-collector
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [backend, frontend]
+      ports:
+        - {protocol: TCP, port: 4317}
+        - {protocol: TCP, port: 4318}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dnsNamespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dnsPodSelector | nindent 14 }}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    {{- range .Values.networkPolicy.otelExternalEgress }}
+    - to:
+        - ipBlock:
+            cidr: {{ .cidr | quote }}
+            {{- with .except }}
+            except:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+      ports:
+        {{- range .ports }}
+        - protocol: {{ default "TCP" .protocol }}
+          port: {{ .port }}
+        {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

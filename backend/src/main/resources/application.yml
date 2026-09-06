@@ -1,0 +1,149 @@
+spring:
+  application:
+    name: news-platform
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/news}
+    username: ${DATABASE_USERNAME:news}
+    password: ${DATABASE_PASSWORD:news}
+    hikari:
+      maximum-pool-size: ${DATABASE_POOL_SIZE:20}
+      connection-timeout: 3000
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    properties:
+      security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
+      sasl.mechanism: ${KAFKA_SASL_MECHANISM:PLAIN}
+      sasl.jaas.config: ${KAFKA_SASL_JAAS_CONFIG:}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        acks: all
+        max.in.flight.requests.per.connection: 5
+    consumer:
+      group-id: news-platform
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.nsangusa.news.integration
+        isolation.level: read_committed
+    listener:
+      ack-mode: record
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}
+  cache:
+    type: redis
+    redis:
+      time-to-live: 2m
+      cache-null-values: false
+  session:
+    timeout: 30m
+    redis:
+      namespace: news:session
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${MAIL_STARTTLS_ENABLE:false}
+            required: ${MAIL_STARTTLS_REQUIRED:false}
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+server:
+  shutdown: graceful
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        secure: ${COOKIE_SECURE:false}
+        same-site: lax
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,modulith
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+  tracing:
+    sampling:
+      probability: ${OTEL_TRACES_SAMPLER_ARG:0.1}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+
+news:
+  public-base-url: ${PUBLIC_BASE_URL:http://localhost:3000}
+  providers:
+    mode: ${PROVIDER_MODE:fake}
+    ai:
+      base-url: ${AI_BASE_URL:https://api.openai.com}
+      api-key: ${AI_API_KEY:}
+      model: ${AI_MODEL:gpt-5-mini}
+      prompt-version: ${AI_PROMPT_VERSION:editorial-v1}
+      timeout: 20s
+    image:
+      base-url: ${IMAGE_BASE_URL:https://api.openai.com}
+      api-key: ${IMAGE_API_KEY:${AI_API_KEY:}}
+      model: ${IMAGE_MODEL:gpt-image-1}
+  storage:
+    endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    region: ${S3_REGION:us-east-1}
+    bucket: ${S3_BUCKET:news-media}
+    access-key: ${S3_ACCESS_KEY:minioadmin}
+    secret-key: ${S3_SECRET_KEY:minioadmin}
+  publication:
+    policy: ${PUBLICATION_POLICY:HUMAN_REVIEW_ALWAYS}
+    automatic-confidence-threshold: ${AUTO_PUBLISH_CONFIDENCE:0.95}
+  comments:
+    enabled: ${COMMENTS_ENABLED:true}
+    require-approval: ${COMMENTS_REQUIRE_APPROVAL:true}
+  newsletter:
+    token-secret: ${NEWSLETTER_TOKEN_SECRET:local-development-secret-change-me}
+    webhook-secret: ${NEWSLETTER_WEBHOOK_SECRET:local-development-webhook-secret-change-me}
+    from-address: ${NEWSLETTER_FROM_ADDRESS:news@example.invalid}
+  x:
+    api-base-url: ${X_API_BASE_URL:https://api.x.com}
+    bearer-token: ${X_BEARER_TOKEN:}
+  outbox:
+    poll-interval: 500
+
+springdoc:
+  api-docs:
+    path: /api/openapi
+  swagger-ui:
+    path: /api/docs

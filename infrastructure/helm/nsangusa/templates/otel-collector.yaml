@@ -1,0 +1,194 @@
+{{- if .Values.otelCollector.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-otel
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 384
+        spike_limit_mib: 96
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.deployment.name
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.node.name
+      resource:
+        attributes:
+          - key: deployment.environment.name
+            value: {{ .Values.global.environment | quote }}
+            action: upsert
+      batch:
+        send_batch_size: 512
+        timeout: 5s
+    exporters:
+      otlp:
+        endpoint: ${env:OTEL_EXPORTER_OTLP_ENDPOINT}
+        tls:
+          insecure: ${env:OTEL_EXPORTER_OTLP_INSECURE}
+        {{- if .Values.otelCollector.exporter.existingSecret }}
+        headers:
+          Authorization: ${env:OTEL_EXPORTER_OTLP_AUTHORIZATION}
+        {{- end }}
+        sending_queue:
+          enabled: true
+          queue_size: 2048
+        retry_on_failure:
+          enabled: true
+          max_elapsed_time: 300s
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resource, batch]
+          exporters: [otlp]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resource, batch]
+          exporters: [otlp]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resource, batch]
+          exporters: [otlp]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-otel-collector
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+spec:
+  replicas: {{ .Values.otelCollector.replicaCount }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: otel-collector
+  template:
+    metadata:
+      labels:
+        {{- include "nsangusa.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: otel-collector
+        {{- with .Values.global.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ toJson .Values.otelCollector | sha256sum }}
+        {{- with .Values.global.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "nsangusa.otelServiceAccount" . }}
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.otelCollector.podSecurityContext | nindent 8 }}
+      {{- if .Values.otelCollector.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.otelCollector.topologySpread.maxSkew }}
+          topologyKey: {{ .Values.otelCollector.topologySpread.topologyKey }}
+          whenUnsatisfiable: {{ .Values.otelCollector.topologySpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "nsangusa.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: otel-collector
+      {{- end }}
+      {{- with .Values.otelCollector.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.otelCollector.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.otelCollector.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: collector
+          image: {{ include "nsangusa.image" (dict "image" .Values.otelCollector.image "environment" .Values.global.environment) | quote }}
+          imagePullPolicy: {{ .Values.otelCollector.image.pullPolicy }}
+          args: ["--config=/etc/otel/config.yaml"]
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ required "otelCollector.exporter.endpoint is required when enabled" .Values.otelCollector.exporter.endpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_INSECURE
+              value: {{ .Values.otelCollector.exporter.insecure | quote }}
+            {{- if .Values.otelCollector.exporter.existingSecret }}
+            - name: OTEL_EXPORTER_OTLP_AUTHORIZATION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.otelCollector.exporter.existingSecret }}
+                  key: {{ .Values.otelCollector.exporter.authorizationKey }}
+            {{- end }}
+          ports:
+            - {name: otlp-grpc, containerPort: 4317}
+            - {name: otlp-http, containerPort: 4318}
+            - {name: health, containerPort: 13133}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.otelCollector.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.otelCollector.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "nsangusa.fullname" . }}-otel
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-otel-collector
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+spec:
+  selector:
+    {{- include "nsangusa.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: otel-collector
+  ports:
+    - {name: otlp-grpc, appProtocol: grpc, port: 4317, targetPort: otlp-grpc}
+    - {name: otlp-http, appProtocol: http, port: 4318, targetPort: otlp-http}
+{{- end }}

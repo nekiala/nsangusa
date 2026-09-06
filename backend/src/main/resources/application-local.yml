@@ -1,0 +1,18 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+  docker:
+    compose:
+      file: ../infrastructure/compose/compose.yaml
+      lifecycle-management: start-only
+  jpa:
+    show-sql: false
+
+logging:
+  pattern:
+    console: '{"timestamp":"%d{yyyy-MM-dd''T''HH:mm:ss.SSSXXX}","level":"%p","logger":"%logger","traceId":"%X{traceId:-}","correlationId":"%X{correlationId:-}","message":"%replace(%m){''\"'',''\\\"''}"}%n'
+
+news:
+  providers:
+    mode: fake

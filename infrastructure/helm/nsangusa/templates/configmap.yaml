@@ -1,0 +1,27 @@
+{{- include "nsangusa.validate" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-backend
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.backendConfig }}
+  {{ $key }}: {{ $value | toString | quote }}
+  {{- end }}
+  SPRING_FLYWAY_ENABLED: {{ ternary "false" "true" .Values.migration.enabled | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ ternary (printf "http://%s-otel-collector:4317" (include "nsangusa.fullname" .)) (default "https://otlp.example.invalid:4317" (get .Values.backendConfig "OTEL_EXPORTER_OTLP_ENDPOINT")) .Values.otelCollector.enabled | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-frontend
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.frontendConfig }}
+  {{ $key }}: {{ $value | toString | quote }}
+  {{- end }}
+  {{- if not (hasKey .Values.frontendConfig "NSANGUSA_API_URL") }}
+  NSANGUSA_API_URL: {{ printf "http://%s-backend:%v" (include "nsangusa.fullname" .) .Values.backend.service.port | quote }}
+  {{- end }}

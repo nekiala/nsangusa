@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nsangusa.example/contracts/events/article-unpublished.schema.json",
+  "title": "ArticleUnpublished",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["articleId"],
+  "properties": {
+    "articleId": {
+      "type": "string",
+      "format": "uuid"
+    }
+  }
+}

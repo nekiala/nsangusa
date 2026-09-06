@@ -1,0 +1,4379 @@
+---
+openapi: 3.1.0
+info:
+  title: Nsangusa API
+  version: 1.0.0
+  description: Static language-neutral contract for implemented Spring MVC routes.
+    Spring Security supplies the explicitly marked login and logout operations.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+- url: https://api.example.invalid
+  description: Placeholder; configure per environment
+tags:
+- name: Identity
+  description: Registration, authentication, account lifecycle, and session management.
+- name: Articles
+  description: Public article retrieval and protected editorial lifecycle operations.
+- name: Comments
+  description: Reader comments, abuse reporting, moderation, and comment policy.
+- name: Newsletter
+  description: Subscription consent, preferences, delivery records, and provider callbacks.
+- name: Search
+  description: Full-text article search and topic or tag discovery.
+- name: Sources
+  description: Monitored X accounts, source records, exclusions, and compliance actions.
+- name: Media
+  description: Editorial image generation, approval, regeneration, and asset removal.
+- name: Operations
+  description: Health summaries, failed-event inspection, and controlled replay.
+security:
+- sessionCookie: []
+- basicAuth: []
+paths:
+  "/api/v1/auth/csrf":
+    get:
+      tags:
+      - Identity
+      operationId: getCsrfToken
+      summary: Issue the CSRF cookie and return its request-header value
+      security: []
+      responses:
+        '200':
+          description: CSRF token
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/CsrfTokenResponse"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/auth/register":
+    post:
+      tags:
+      - Identity
+      operationId: register
+      summary: Register a local account requiring email verification
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/RegistrationRequest"
+      responses:
+        '201':
+          description: Registration created
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/RegistrationResponse"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+  "/api/v1/auth/login":
+    post:
+      tags:
+      - Identity
+      operationId: login
+      summary: Authenticate using Spring Security form login
+      security: []
+      x-framework-provided: spring-security
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - username
+              - password
+              properties:
+                username:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '204':
+          description: Authentication succeeded and a session was established
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+  "/api/v1/auth/logout":
+    post:
+      tags:
+      - Identity
+      operationId: logout
+      summary: Invalidate the current session using Spring Security logout
+      x-framework-provided: spring-security
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '302':
+          description: Session invalidated and redirected to the default logout-success
+            URL
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri-reference
+            Set-Cookie:
+              schema:
+                type: string
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+      security: []
+  "/api/v1/auth/verify-email":
+    post:
+      tags:
+      - Identity
+      operationId: verifyEmail
+      summary: Consume a short-lived email-verification token
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TokenRequest"
+      responses:
+        '204':
+          description: Email verified
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+  "/api/v1/auth/password-reset/request":
+    post:
+      tags:
+      - Identity
+      operationId: requestPasswordReset
+      summary: Request a short-lived password-reset email
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/PasswordResetRequest"
+      responses:
+        '202':
+          description: Request accepted without account enumeration
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+  "/api/v1/auth/password-reset/confirm":
+    post:
+      tags:
+      - Identity
+      operationId: confirmPasswordReset
+      summary: Set a new password using a short-lived reset token
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/PasswordResetConfirm"
+      responses:
+        '204':
+          description: Password reset
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+  "/api/v1/auth/me":
+    get:
+      tags:
+      - Identity
+      operationId: getCurrentUser
+      summary: Get the authenticated user's profile
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/UserProfile"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+    patch:
+      tags:
+      - Identity
+      operationId: updateCurrentUser
+      summary: Update the authenticated user's profile
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ProfileUpdateRequest"
+      responses:
+        '200':
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/UserProfile"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+    delete:
+      tags:
+      - Identity
+      operationId: deleteCurrentUser
+      summary: Delete the authenticated account and invalidate its current session
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AccountDeletionRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/auth/me/export":
+    get:
+      tags:
+      - Identity
+      operationId: exportCurrentUserData
+      summary: Export the authenticated user's account data
+      responses:
+        '200':
+          description: Account-data export
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: Attachment filename for the JSON export
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/AccountDataExport"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/auth/sessions":
+    get:
+      tags:
+      - Identity
+      operationId: listCurrentUserSessions
+      summary: List sessions belonging to the authenticated user
+      responses:
+        '200':
+          description: User sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/UserSession"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/auth/sessions/{sessionId}":
+    delete:
+      tags:
+      - Identity
+      operationId: revokeCurrentUserSession
+      summary: Revoke one session belonging to the authenticated user
+      parameters:
+      - "$ref": "#/components/parameters/SessionId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/articles":
+    get:
+      tags:
+      - Articles
+      operationId: listLatestArticles
+      summary: List the latest published articles
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/ArticleLimit"
+      responses:
+        '200':
+          description: Published articles
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/Article"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/articles/{slug}":
+    get:
+      tags:
+      - Articles
+      operationId: getPublishedArticle
+      summary: Get a published article by slug
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/Slug"
+      responses:
+        '200':
+          description: Published article
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Article"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/articles":
+    post:
+      tags:
+      - Articles
+      operationId: createManualArticle
+      summary: Create a sourced article for editorial review
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ArticleCommandRequest"
+      responses:
+        '201':
+          description: Article created
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/IdResponse"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/articles/{id}":
+    get:
+      tags:
+      - Articles
+      operationId: getAdminArticle
+      summary: Get an article for editorial review
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      responses:
+        '200':
+          description: Article
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/Article"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+    put:
+      tags:
+      - Articles
+      operationId: editArticle
+      summary: Replace editable article content and return it to review
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/ExpectedVersion"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ArticleCommandRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/articles/{id}/approve":
+    post:
+      tags:
+      - Articles
+      operationId: approveArticle
+      summary: Approve an article for publication workflow
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '202':
+          description: Transition accepted
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/articles/{id}/publish":
+    post:
+      tags:
+      - Articles
+      operationId: publishArticle
+      summary: Publish an approved article immediately
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '204':
+          description: Transition applied
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/articles/{id}/reject":
+    post:
+      tags:
+      - Articles
+      operationId: rejectArticle
+      summary: Reject an article awaiting review
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '204':
+          description: Transition applied
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/articles/{id}/unpublish":
+    post:
+      tags:
+      - Articles
+      operationId: unpublishArticle
+      summary: Remove a published article from public surfaces
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '204':
+          description: Transition applied
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/articles/{id}/restore":
+    post:
+      tags:
+      - Articles
+      operationId: restoreArticle
+      summary: Restore an unpublished article
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '204':
+          description: Transition applied
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/articles/{id}/archive":
+    post:
+      tags:
+      - Articles
+      operationId: archiveArticle
+      summary: Archive an unpublished or rejected article
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '204':
+          description: Transition applied
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/articles/{articleId}/schedule":
+    post:
+      tags:
+      - Articles
+      operationId: scheduleArticle
+      summary: Schedule an approved article for publication
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/ArticleId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ScheduleRequest"
+      responses:
+        '202':
+          description: Publication scheduled
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ScheduleResponse"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/articles/{articleId}/comments":
+    get:
+      tags:
+      - Comments
+      operationId: listApprovedComments
+      summary: List approved comments for an article
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/ArticleId"
+      responses:
+        '200':
+          description: Approved comments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/Comment"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+    post:
+      tags:
+      - Comments
+      operationId: submitComment
+      summary: Submit an authenticated comment for moderation
+      parameters:
+      - "$ref": "#/components/parameters/ArticleId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/CommentRequest"
+      responses:
+        '202':
+          description: Comment accepted for moderation
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/IdResponse"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/comments/{commentId}":
+    put:
+      tags:
+      - Comments
+      operationId: editOwnComment
+      summary: Edit a comment during the configured author editing window
+      parameters:
+      - "$ref": "#/components/parameters/CommentId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/EditCommentRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+    delete:
+      tags:
+      - Comments
+      operationId: deleteOwnComment
+      summary: Delete a comment as its author
+      parameters:
+      - "$ref": "#/components/parameters/CommentId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/comments/{commentId}/reports":
+    post:
+      tags:
+      - Comments
+      operationId: reportComment
+      summary: Report a visible comment for moderation
+      parameters:
+      - "$ref": "#/components/parameters/CommentId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/CommentReportRequest"
+      responses:
+        '202':
+          description: Report accepted
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/IdResponse"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/comments/{commentId}/moderate":
+    post:
+      tags:
+      - Comments
+      operationId: moderateComment
+      summary: Apply a moderation decision to a comment
+      x-required-roles:
+      - MODERATOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/CommentId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ModerationRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/comments/queue":
+    get:
+      tags:
+      - Comments
+      operationId: listCommentModerationQueue
+      summary: List comments awaiting or requiring moderation
+      x-required-roles:
+      - MODERATOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/LimitedListSize"
+      responses:
+        '200':
+          description: Moderation queue
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/ModerationQueueItem"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/comment-reports":
+    get:
+      tags:
+      - Comments
+      operationId: listOpenCommentReports
+      summary: List open comment-abuse reports
+      x-required-roles:
+      - MODERATOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/LimitedListSize"
+      responses:
+        '200':
+          description: Open reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/CommentReport"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/comments/{commentId}/history":
+    get:
+      tags:
+      - Comments
+      operationId: getCommentModerationHistory
+      summary: Get a comment's moderation history
+      x-required-roles:
+      - MODERATOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/CommentId"
+      responses:
+        '200':
+          description: Moderation history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/ModerationHistory"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/commenting-privileges/{userId}":
+    get:
+      tags:
+      - Comments
+      operationId: getCommentingPrivilege
+      summary: Get a user's commenting privilege
+      x-required-roles:
+      - MODERATOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/UserId"
+      responses:
+        '200':
+          description: Commenting privilege
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/CommentingPrivilege"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/commenting-privileges/{userId}/history":
+    get:
+      tags:
+      - Comments
+      operationId: getCommentingPrivilegeHistory
+      summary: Get a user's commenting-privilege history
+      x-required-roles:
+      - MODERATOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/UserId"
+      responses:
+        '200':
+          description: Privilege history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/CommentingPrivilegeHistory"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/commenting-privileges/{userId}/suspend":
+    post:
+      tags:
+      - Comments
+      operationId: suspendCommentingPrivilege
+      summary: Suspend a user's commenting privilege
+      x-required-roles:
+      - MODERATOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/UserId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SuspensionRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/commenting-privileges/{userId}/restore":
+    post:
+      tags:
+      - Comments
+      operationId: restoreCommentingPrivilege
+      summary: Restore a user's commenting privilege
+      x-required-roles:
+      - MODERATOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/UserId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ReasonRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/comment-settings":
+    get:
+      tags:
+      - Comments
+      operationId: getGlobalCommentSettings
+      summary: Get global comment settings
+      x-required-roles:
+      - MODERATOR
+      - ADMINISTRATOR
+      responses:
+        '200':
+          description: Global comment settings
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/GlobalCommentSettings"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+    put:
+      tags:
+      - Comments
+      operationId: updateGlobalCommentSettings
+      summary: Update global comment settings
+      x-required-roles:
+      - MODERATOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/GlobalCommentSettingsRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/articles/{articleId}/comment-settings":
+    get:
+      tags:
+      - Comments
+      operationId: getArticleCommentSettings
+      summary: Get article-specific comment overrides
+      x-required-roles:
+      - MODERATOR
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/ArticleId"
+      responses:
+        '200':
+          description: Article comment settings
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ArticleCommentSettings"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+    put:
+      tags:
+      - Comments
+      operationId: updateArticleCommentSettings
+      summary: Update article-specific comment overrides
+      x-required-roles:
+      - MODERATOR
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/ArticleId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ArticleCommentSettingsRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/search":
+    get:
+      tags:
+      - Search
+      operationId: searchArticles
+      summary: Search published articles using full-text ranking
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/SearchQuery"
+      - "$ref": "#/components/parameters/Page"
+      - "$ref": "#/components/parameters/PageSize"
+      responses:
+        '200':
+          description: Search result
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SearchPage"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/topics":
+    get:
+      tags:
+      - Search
+      operationId: listTopics
+      summary: List published topic facets
+      security: []
+      responses:
+        '200':
+          description: Search result
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/SearchFacet"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/topics/{topic}":
+    get:
+      tags:
+      - Search
+      operationId: listArticlesByTopic
+      summary: List published articles for a topic
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/Topic"
+      - "$ref": "#/components/parameters/Page"
+      - "$ref": "#/components/parameters/PageSize"
+      responses:
+        '200':
+          description: Search result
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SearchPage"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/tags":
+    get:
+      tags:
+      - Search
+      operationId: listTags
+      summary: List published tag facets
+      security: []
+      responses:
+        '200':
+          description: Search result
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/SearchFacet"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/tags/{tag}":
+    get:
+      tags:
+      - Search
+      operationId: listArticlesByTag
+      summary: List published articles for a tag
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/Tag"
+      - "$ref": "#/components/parameters/Page"
+      - "$ref": "#/components/parameters/PageSize"
+      responses:
+        '200':
+          description: Search result
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SearchPage"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/newsletter/subscriptions":
+    post:
+      tags:
+      - Newsletter
+      operationId: requestNewsletterSubscription
+      summary: Request a double-opt-in newsletter subscription
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SubscriptionRequest"
+      responses:
+        '202':
+          description: Subscription verification requested
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SubscriptionRequested"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+  "/api/v1/newsletter/confirm":
+    get:
+      tags:
+      - Newsletter
+      operationId: confirmNewsletterSubscription
+      summary: Confirm a newsletter subscription
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/SubscriptionId"
+      - "$ref": "#/components/parameters/SubscriptionToken"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/newsletter/unsubscribe":
+    post:
+      tags:
+      - Newsletter
+      operationId: unsubscribeNewsletter
+      summary: Unsubscribe using the subscription token
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/SubscriptionId"
+      - "$ref": "#/components/parameters/SubscriptionToken"
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+  "/api/v1/newsletter/preferences":
+    post:
+      tags:
+      - Newsletter
+      operationId: updateNewsletterPreferences
+      summary: Update newsletter frequency using the subscription token
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/SubscriptionId"
+      - "$ref": "#/components/parameters/SubscriptionToken"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/NewsletterPreferenceRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+  "/api/v1/newsletter/provider-webhooks/{provider}":
+    post:
+      tags:
+      - Newsletter
+      operationId: processNewsletterProviderWebhook
+      summary: Process a signed newsletter-provider webhook
+      security: []
+      parameters:
+      - "$ref": "#/components/parameters/Provider"
+      - "$ref": "#/components/parameters/WebhookSignature"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {}
+          text/plain:
+            schema:
+              type: string
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+  "/api/v1/newsletter/admin/deliveries":
+    get:
+      tags:
+      - Newsletter
+      operationId: listNewsletterDeliveries
+      summary: List recent newsletter deliveries
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/DeliveryLimit"
+      responses:
+        '200':
+          description: Recent deliveries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/NewsletterDelivery"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/x-accounts":
+    get:
+      tags:
+      - Sources
+      operationId: listMonitoredXAccounts
+      summary: List monitored X accounts
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/IncludeRemoved"
+      responses:
+        '200':
+          description: Monitored accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/XAccount"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+    post:
+      tags:
+      - Sources
+      operationId: addMonitoredXAccount
+      summary: Add an X account to official-API monitoring
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/AddXAccountRequest"
+      responses:
+        '201':
+          description: Monitored account created
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/IdResponse"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/x-accounts/{id}":
+    get:
+      tags:
+      - Sources
+      operationId: getMonitoredXAccount
+      summary: Get a monitored X account
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      responses:
+        '200':
+          description: Monitored account
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/XAccount"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+    put:
+      tags:
+      - Sources
+      operationId: updateMonitoredXAccount
+      summary: Update a monitored X account
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/UpdateXAccountRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+    delete:
+      tags:
+      - Sources
+      operationId: removeMonitoredXAccount
+      summary: Soft-remove a monitored X account
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SourceReasonRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/x-accounts/{id}/monitoring":
+    put:
+      tags:
+      - Sources
+      operationId: setXAccountMonitoring
+      summary: Enable or disable X-account monitoring
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/MonitoringRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/x-accounts/{id}/simulate-post":
+    post:
+      tags:
+      - Sources
+      operationId: simulateXPostDiscovery
+      summary: Inject a permitted simulated post for local or testing workflows
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SimulatedPostRequest"
+      responses:
+        '202':
+          description: Simulated source accepted
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/IdResponse"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/blocked-source-accounts":
+    get:
+      tags:
+      - Sources
+      operationId: listBlockedSourceAccounts
+      summary: List blocked source accounts
+      x-required-roles:
+      - ADMINISTRATOR
+      responses:
+        '200':
+          description: Blocked accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/BlockedSourceAccount"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/blocked-source-accounts/{accountId}":
+    put:
+      tags:
+      - Sources
+      operationId: blockSourceAccount
+      summary: Block a source account from ingestion and publication
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/SourceAccountId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/BlockSourceAccountRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+    delete:
+      tags:
+      - Sources
+      operationId: unblockSourceAccount
+      summary: Remove a source-account block
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/SourceAccountId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/source-posts":
+    get:
+      tags:
+      - Sources
+      operationId: listSourcePosts
+      summary: List ingested source posts for compliance review
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/SourceAccountFilter"
+      - "$ref": "#/components/parameters/SourceStatusFilter"
+      - "$ref": "#/components/parameters/SourceLimit"
+      responses:
+        '200':
+          description: Source summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/SourceSummary"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/source-posts/{id}":
+    get:
+      tags:
+      - Sources
+      operationId: getSourcePost
+      summary: Get an ingested source post and its associations
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      responses:
+        '200':
+          description: Source post
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/SourcePost"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/source-posts/{id}/exclude":
+    post:
+      tags:
+      - Sources
+      operationId: excludeSourcePost
+      summary: Exclude a source post from downstream use
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SourceReasonRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/source-posts/{id}/compliance-edit":
+    put:
+      tags:
+      - Sources
+      operationId: editSourcePostForCompliance
+      summary: Replace permitted source text for compliance
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ComplianceEditRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/source-posts/{id}/content":
+    delete:
+      tags:
+      - Sources
+      operationId: deleteSourcePostContent
+      summary: Delete retained source content for compliance
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/SourceReasonRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/source-posts/{id}/reconciliation":
+    post:
+      tags:
+      - Sources
+      operationId: reconcileSourcePostCompliance
+      summary: Record compliance reconciliation outcome
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ReconciliationRequest"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/articles/{articleId}/images":
+    get:
+      tags:
+      - Media
+      operationId: listArticleImageGenerations
+      summary: List image generations for an article
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/ArticleId"
+      responses:
+        '200':
+          description: Image generations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/ImageGeneration"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/articles/{articleId}/images/regenerate":
+    post:
+      tags:
+      - Media
+      operationId: regenerateArticleImage
+      summary: Request a new generated image for an article
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/ArticleId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ImageRegenerationRequest"
+      responses:
+        '202':
+          description: Image-generation event accepted
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/EventResponse"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/image-generations/{generationId}/approve":
+    post:
+      tags:
+      - Media
+      operationId: approveImageGeneration
+      summary: Approve an image generation
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/GenerationId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/media-assets/{assetId}":
+    delete:
+      tags:
+      - Media
+      operationId: deleteMediaAsset
+      summary: Delete a media asset from object storage and soft-delete its record
+      x-required-roles:
+      - EDITOR
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/AssetId"
+      - "$ref": "#/components/parameters/CsrfToken"
+      responses:
+        '204':
+          description: Operation completed
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/operations/summary":
+    get:
+      tags:
+      - Operations
+      operationId: getOperationalSummary
+      summary: Get the administrative event-processing summary
+      x-required-roles:
+      - ADMINISTRATOR
+      responses:
+        '200':
+          description: Operational summary
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/OperationalSummary"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/operations/failed-events":
+    get:
+      tags:
+      - Operations
+      operationId: listFailedEvents
+      summary: List failed event-consumption records
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/FailedEventStatus"
+      - "$ref": "#/components/parameters/FailedEventLimit"
+      responses:
+        '200':
+          description: Failed events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/FailedEvent"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/operations/replays":
+    post:
+      tags:
+      - Operations
+      operationId: requestEventReplay
+      summary: Preview or request replay of failed events
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/CsrfToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/ReplayRequestCommand"
+      responses:
+        '200':
+          description: Dry-run replay preview
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ReplayRequest"
+        '202':
+          description: Replay request accepted
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ReplayRequest"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/operations/replays/{id}":
+    get:
+      tags:
+      - Operations
+      operationId: getEventReplay
+      summary: Get an event-replay request
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      responses:
+        '200':
+          description: Replay request
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/ReplayRequest"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+  "/api/v1/admin/operations/replays/{id}/records":
+    get:
+      tags:
+      - Operations
+      operationId: listEventReplayRecords
+      summary: List records produced by an event-replay request
+      x-required-roles:
+      - ADMINISTRATOR
+      parameters:
+      - "$ref": "#/components/parameters/Id"
+      responses:
+        '200':
+          description: Replay records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  "$ref": "#/components/schemas/ReplayRecord"
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '429':
+          "$ref": "#/components/responses/TooManyRequests"
+        '503':
+          "$ref": "#/components/responses/ServiceUnavailable"
+        default:
+          "$ref": "#/components/responses/UnexpectedError"
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: SESSION
+      description: Redis-backed opaque Spring Session cookie
+    basicAuth:
+      type: http
+      scheme: basic
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        "$ref": "#/components/schemas/Identifier"
+    ArticleId:
+      name: articleId
+      in: path
+      required: true
+      schema:
+        "$ref": "#/components/schemas/Identifier"
+    CommentId:
+      name: commentId
+      in: path
+      required: true
+      schema:
+        "$ref": "#/components/schemas/Identifier"
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        "$ref": "#/components/schemas/Identifier"
+    GenerationId:
+      name: generationId
+      in: path
+      required: true
+      schema:
+        "$ref": "#/components/schemas/Identifier"
+    AssetId:
+      name: assetId
+      in: path
+      required: true
+      schema:
+        "$ref": "#/components/schemas/Identifier"
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 250
+    Topic:
+      name: topic
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+    Tag:
+      name: tag
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+    SourceAccountId:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        pattern: "^[0-9]{1,30}$"
+        maxLength: 30
+    Provider:
+      name: provider
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    CsrfToken:
+      name: X-XSRF-TOKEN
+      in: header
+      required: true
+      description: Spring Security CSRF token matching the XSRF-TOKEN cookie
+      schema:
+        type: string
+        minLength: 1
+    ExpectedVersion:
+      name: expectedVersion
+      in: query
+      required: true
+      schema:
+        type: integer
+        format: int64
+    ArticleLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 20
+    LimitedListSize:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    PageSize:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    SearchQuery:
+      name: q
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 200
+    SubscriptionId:
+      name: id
+      in: query
+      required: true
+      schema:
+        "$ref": "#/components/schemas/Identifier"
+    SubscriptionToken:
+      name: token
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    WebhookSignature:
+      name: X-Webhook-Signature
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    DeliveryLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 100
+    IncludeRemoved:
+      name: includeRemoved
+      in: query
+      required: false
+      schema:
+        type: boolean
+        default: false
+    SourceAccountFilter:
+      name: accountId
+      in: query
+      required: false
+      schema:
+        type: string
+    SourceStatusFilter:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+    SourceLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 50
+    FailedEventStatus:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+    FailedEventLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+  responses:
+    BadRequest:
+      description: Invalid path, query, header, or request-body input
+      content:
+        application/problem+json:
+          schema:
+            "$ref": "#/components/schemas/Problem"
+    Unauthorized:
+      description: Authentication is required or failed
+      content:
+        application/problem+json:
+          schema:
+            "$ref": "#/components/schemas/Problem"
+    Forbidden:
+      description: Authentication succeeded but authorization or CSRF validation failed
+      content:
+        application/problem+json:
+          schema:
+            "$ref": "#/components/schemas/Problem"
+    Conflict:
+      description: The requested transition conflicts with current resource state
+      content:
+        application/problem+json:
+          schema:
+            "$ref": "#/components/schemas/Problem"
+    TooManyRequests:
+      description: Per-client request rate exceeded
+      content:
+        application/problem+json:
+          schema:
+            "$ref": "#/components/schemas/Problem"
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Retry delay in seconds
+    ServiceUnavailable:
+      description: Rate limiting could not reach its Redis dependency
+      content:
+        application/problem+json:
+          schema:
+            "$ref": "#/components/schemas/Problem"
+    UnexpectedError:
+      description: Unexpected API failure
+      content:
+        application/problem+json:
+          schema:
+            "$ref": "#/components/schemas/Problem"
+  schemas:
+    Identifier:
+      type: string
+      format: uuid
+    IdResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+    EventResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - eventId
+      properties:
+        eventId:
+          "$ref": "#/components/schemas/Identifier"
+    CsrfTokenResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - headerName
+      - token
+      properties:
+        headerName:
+          type: string
+        token:
+          type: string
+    Problem:
+      type: object
+      additionalProperties: true
+      required:
+      - title
+      - status
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        traceId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+    RegistrationRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - email
+      - password
+      - displayName
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 128
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 100
+    RegistrationResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - status
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        status:
+          type: string
+          const: verification_required
+    TokenRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - token
+      properties:
+        token:
+          type: string
+          minLength: 1
+    PasswordResetRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - email
+      properties:
+        email:
+          type: string
+          format: email
+    PasswordResetConfirm:
+      type: object
+      additionalProperties: false
+      required:
+      - token
+      - newPassword
+      properties:
+        token:
+          type: string
+          minLength: 1
+        newPassword:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 128
+    ProfileUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        displayName:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 100
+        newsletterFrequency:
+          type:
+          - string
+          - 'null'
+          enum:
+          - instant
+          - daily
+          - weekly
+          - 
+    AccountDeletionRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - confirmation
+      properties:
+        confirmation:
+          type: string
+          const: DELETE
+    NewsletterPreference:
+      type: object
+      additionalProperties: false
+      required:
+      - subscriptionId
+      - status
+      - frequency
+      properties:
+        subscriptionId:
+          oneOf:
+          - "$ref": "#/components/schemas/Identifier"
+          - type: 'null'
+        status:
+          type:
+          - string
+          - 'null'
+        frequency:
+          type:
+          - string
+          - 'null'
+    UserProfile:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - email
+      - displayName
+      - roles
+      - emailVerified
+      - createdAt
+      - lastLoginAt
+      - newsletter
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        roles:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        emailVerified:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        lastLoginAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        newsletter:
+          oneOf:
+          - "$ref": "#/components/schemas/NewsletterPreference"
+          - type: 'null'
+    ExternalIdentity:
+      type: object
+      additionalProperties: false
+      required:
+      - issuer
+      - subject
+      - emailAtLink
+      - linkedAt
+      - lastLoginAt
+      properties:
+        issuer:
+          type: string
+        subject:
+          type: string
+        emailAtLink:
+          type: string
+          format: email
+        linkedAt:
+          type: string
+          format: date-time
+        lastLoginAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    AccountDataExport:
+      type: object
+      additionalProperties: false
+      required:
+      - generatedAt
+      - profile
+      - externalIdentities
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        profile:
+          "$ref": "#/components/schemas/UserProfile"
+        externalIdentities:
+          type: array
+          items:
+            "$ref": "#/components/schemas/ExternalIdentity"
+    UserSession:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - createdAt
+      - lastAccessedAt
+      - expiresAt
+      - current
+      properties:
+        id:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastAccessedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+    ArticleState:
+      type: string
+      enum:
+      - DISCOVERED
+      - ANALYZING
+      - DRAFTING
+      - AWAITING_REVIEW
+      - APPROVED
+      - SCHEDULED
+      - PUBLISHED
+      - UNPUBLISHED
+      - REJECTED
+      - ARCHIVED
+    ArticleSource:
+      type: object
+      additionalProperties: false
+      required:
+      - sourcePostId
+      - account
+      - postId
+      - url
+      - publishedAt
+      properties:
+        sourcePostId:
+          "$ref": "#/components/schemas/Identifier"
+        account:
+          type: string
+        postId:
+          type: string
+        url:
+          type: string
+          format: uri
+        publishedAt:
+          type: string
+          format: date-time
+    Article:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - slug
+      - headline
+      - summary
+      - body
+      - editorialContext
+      - topic
+      - tags
+      - state
+      - heroObjectKey
+      - imageAltText
+      - generatedImage
+      - commentsEnabled
+      - publishedAt
+      - updatedAt
+      - version
+      - sources
+      - warnings
+      - confidence
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        slug:
+          type: string
+        headline:
+          type: string
+        summary:
+          type: string
+        body:
+          type: string
+        editorialContext:
+          type:
+          - string
+          - 'null'
+        topic:
+          type: string
+        tags:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        state:
+          "$ref": "#/components/schemas/ArticleState"
+        heroObjectKey:
+          type:
+          - string
+          - 'null'
+        imageAltText:
+          type:
+          - string
+          - 'null'
+        generatedImage:
+          type: boolean
+        commentsEnabled:
+          type: boolean
+        publishedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+        sources:
+          type: array
+          items:
+            "$ref": "#/components/schemas/ArticleSource"
+        warnings:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: number
+          format: double
+    ArticleCommandRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - headline
+      - summary
+      - body
+      - editorialContext
+      - seoTitle
+      - seoDescription
+      - slugSuggestion
+      - topic
+      - tags
+      - sources
+      - commentsEnabled
+      properties:
+        headline:
+          type: string
+          minLength: 1
+          maxLength: 300
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        body:
+          type: string
+          minLength: 1
+          maxLength: 100000
+        editorialContext:
+          type:
+          - string
+          - 'null'
+          maxLength: 20000
+        seoTitle:
+          type: string
+          minLength: 1
+          maxLength: 300
+        seoDescription:
+          type: string
+          minLength: 1
+          maxLength: 500
+        slugSuggestion:
+          type: string
+          minLength: 1
+          maxLength: 250
+        topic:
+          type: string
+          minLength: 1
+          maxLength: 100
+        tags:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+        sources:
+          type: array
+          minItems: 1
+          items:
+            "$ref": "#/components/schemas/ArticleSource"
+        commentsEnabled:
+          type: boolean
+    ScheduleRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - publishAt
+      properties:
+        publishAt:
+          type: string
+          format: date-time
+    ScheduleResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - scheduleId
+      properties:
+        scheduleId:
+          "$ref": "#/components/schemas/Identifier"
+    CommentRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - body
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        parentId:
+          oneOf:
+          - "$ref": "#/components/schemas/Identifier"
+          - type: 'null'
+    EditCommentRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - body
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+    CommentReportRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          enum:
+          - abuse
+          - harassment
+          - hate
+          - misinformation
+          - spam
+          - other
+        details:
+          type:
+          - string
+          - 'null'
+          maxLength: 2000
+    ModerationRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - decision
+      properties:
+        decision:
+          type: string
+          enum:
+          - approved
+          - rejected
+          - spam
+          - deleted
+        reason:
+          type:
+          - string
+          - 'null'
+          maxLength: 2000
+    Comment:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - authorId
+      - body
+      - parentId
+      - state
+      - createdAt
+      - editedAt
+      - deletedByAuthor
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        authorId:
+          "$ref": "#/components/schemas/Identifier"
+        body:
+          type: string
+        parentId:
+          oneOf:
+          - "$ref": "#/components/schemas/Identifier"
+          - type: 'null'
+        state:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        editedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        deletedByAuthor:
+          type: boolean
+    ModerationQueueItem:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - articleId
+      - authorId
+      - body
+      - state
+      - spamScore
+      - spamReason
+      - openReports
+      - createdAt
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        articleId:
+          "$ref": "#/components/schemas/Identifier"
+        authorId:
+          "$ref": "#/components/schemas/Identifier"
+        body:
+          type: string
+        state:
+          type: string
+        spamScore:
+          type: number
+          format: double
+        spamReason:
+          type:
+          - string
+          - 'null'
+        openReports:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+    CommentReport:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - commentId
+      - reporterId
+      - reason
+      - details
+      - status
+      - createdAt
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        commentId:
+          "$ref": "#/components/schemas/Identifier"
+        reporterId:
+          "$ref": "#/components/schemas/Identifier"
+        reason:
+          type: string
+        details:
+          type:
+          - string
+          - 'null'
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ModerationHistory:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - moderatorId
+      - previousState
+      - action
+      - reason
+      - createdAt
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        moderatorId:
+          "$ref": "#/components/schemas/Identifier"
+        previousState:
+          type:
+          - string
+          - 'null'
+        action:
+          type: string
+        reason:
+          type:
+          - string
+          - 'null'
+        createdAt:
+          type: string
+          format: date-time
+    CommentingPrivilege:
+      type: object
+      additionalProperties: false
+      required:
+      - userId
+      - status
+      - suspendedUntil
+      - reason
+      - moderatorId
+      - updatedAt
+      properties:
+        userId:
+          "$ref": "#/components/schemas/Identifier"
+        status:
+          type: string
+        suspendedUntil:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        reason:
+          type:
+          - string
+          - 'null'
+        moderatorId:
+          oneOf:
+          - "$ref": "#/components/schemas/Identifier"
+          - type: 'null'
+        updatedAt:
+          type: string
+          format: date-time
+    CommentingPrivilegeHistory:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - action
+      - suspendedUntil
+      - reason
+      - moderatorId
+      - createdAt
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        action:
+          type: string
+        suspendedUntil:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        reason:
+          type:
+          - string
+          - 'null'
+        moderatorId:
+          "$ref": "#/components/schemas/Identifier"
+        createdAt:
+          type: string
+          format: date-time
+    SuspensionRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      properties:
+        until:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    ReasonRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    GlobalCommentSettings:
+      type: object
+      additionalProperties: false
+      required:
+      - enabled
+      - requireApproval
+      - editingWindowMinutes
+      - reviewSpamThreshold
+      - rejectSpamThreshold
+      - reportEscalationThreshold
+      - updatedAt
+      properties:
+        enabled:
+          type: boolean
+        requireApproval:
+          type: boolean
+        editingWindowMinutes:
+          type: integer
+        reviewSpamThreshold:
+          type: number
+          format: double
+        rejectSpamThreshold:
+          type: number
+          format: double
+        reportEscalationThreshold:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+    GlobalCommentSettingsRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - enabled
+      - requireApproval
+      - editingWindowMinutes
+      - reviewSpamThreshold
+      - rejectSpamThreshold
+      - reportEscalationThreshold
+      properties:
+        enabled:
+          type: boolean
+        requireApproval:
+          type: boolean
+        editingWindowMinutes:
+          type: integer
+          minimum: 0
+          maximum: 10080
+        reviewSpamThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        rejectSpamThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        reportEscalationThreshold:
+          type: integer
+          minimum: 1
+          maximum: 100
+    ArticleCommentSettings:
+      type: object
+      additionalProperties: false
+      required:
+      - articleId
+      - enabledOverride
+      - requireApprovalOverride
+      - updatedAt
+      properties:
+        articleId:
+          "$ref": "#/components/schemas/Identifier"
+        enabledOverride:
+          type:
+          - boolean
+          - 'null'
+        requireApprovalOverride:
+          type:
+          - boolean
+          - 'null'
+        updatedAt:
+          type: string
+          format: date-time
+    ArticleCommentSettingsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        enabledOverride:
+          type:
+          - boolean
+          - 'null'
+        requireApprovalOverride:
+          type:
+          - boolean
+          - 'null'
+    SearchPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - size
+      - total
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/SearchResult"
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    SearchResult:
+      type: object
+      additionalProperties: false
+      required:
+      - articleId
+      - slug
+      - headline
+      - summary
+      - topic
+      - tags
+      - publishedAt
+      - rank
+      properties:
+        articleId:
+          "$ref": "#/components/schemas/Identifier"
+        slug:
+          type: string
+        headline:
+          type: string
+        summary:
+          type: string
+        topic:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        publishedAt:
+          type: string
+          format: date-time
+        rank:
+          type: number
+          format: double
+    SearchFacet:
+      type: object
+      additionalProperties: false
+      required:
+      - value
+      - articleCount
+      properties:
+        value:
+          type: string
+        articleCount:
+          type: integer
+          format: int64
+    SubscriptionRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - email
+      - consentSource
+      - frequency
+      properties:
+        email:
+          type: string
+          format: email
+        consentSource:
+          type: string
+          minLength: 1
+        frequency:
+          type: string
+          enum:
+          - immediate
+          - daily
+          - weekly
+          - all
+    SubscriptionRequested:
+      type: object
+      additionalProperties: false
+      required:
+      - subscriptionId
+      - status
+      properties:
+        subscriptionId:
+          "$ref": "#/components/schemas/Identifier"
+        status:
+          type: string
+          const: verification_sent
+    NewsletterPreferenceRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - frequency
+      properties:
+        frequency:
+          type: string
+          enum:
+          - immediate
+          - daily
+          - weekly
+          - all
+    NewsletterDelivery:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - subscriptionId
+      - articleId
+      - campaignKey
+      - status
+      - attemptCount
+      - failureCode
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        subscriptionId:
+          "$ref": "#/components/schemas/Identifier"
+        articleId:
+          "$ref": "#/components/schemas/Identifier"
+        campaignKey:
+          type: string
+        status:
+          type: string
+        attemptCount:
+          type: integer
+        failureCode:
+          type:
+          - string
+          - 'null'
+    XAccount:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - accountId
+      - handle
+      - displayName
+      - topics
+      - relevanceThreshold
+      - monitoringEnabled
+      - createdAt
+      - removedAt
+      - lastSuccessfulSyncAt
+      - lastSyncAttemptAt
+      - rateLimitResetAt
+      - rateLimitLimit
+      - rateLimitRemaining
+      - lastPostId
+      - lastError
+      - consecutiveErrors
+      - syncHealth
+      - version
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        accountId:
+          type: string
+        handle:
+          type: string
+        displayName:
+          type: string
+        topics:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+        relevanceThreshold:
+          type: number
+          format: double
+        monitoringEnabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        removedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        lastSuccessfulSyncAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        lastSyncAttemptAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        rateLimitResetAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        rateLimitLimit:
+          type:
+          - integer
+          - 'null'
+        rateLimitRemaining:
+          type:
+          - integer
+          - 'null'
+        lastPostId:
+          type:
+          - string
+          - 'null'
+        lastError:
+          type:
+          - string
+          - 'null'
+        consecutiveErrors:
+          type: integer
+        syncHealth:
+          type: string
+        version:
+          type: integer
+          format: int64
+    AddXAccountRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - accountId
+      - handle
+      - displayName
+      - topics
+      - relevanceThreshold
+      properties:
+        accountId:
+          type: string
+          pattern: "^[0-9]+$"
+          maxLength: 30
+        handle:
+          type: string
+          pattern: "^@?[A-Za-z0-9_]{1,15}$"
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        topics:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+        relevanceThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+    UpdateXAccountRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - displayName
+      - topics
+      - relevanceThreshold
+      - monitoringEnabled
+      properties:
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        topics:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+        relevanceThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        monitoringEnabled:
+          type: boolean
+    MonitoringRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - enabled
+      properties:
+        enabled:
+          type: boolean
+    SimulatedPostRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - postId
+      - canonicalUrl
+      - permittedText
+      - publishedAt
+      properties:
+        postId:
+          type: string
+          pattern: "^[0-9]+$"
+        canonicalUrl:
+          type: string
+          format: uri
+        permittedText:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        publishedAt:
+          type: string
+          format: date-time
+    BlockedSourceAccount:
+      type: object
+      additionalProperties: false
+      required:
+      - accountId
+      - reason
+      - createdAt
+      - actorId
+      properties:
+        accountId:
+          type: string
+        reason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        actorId:
+          "$ref": "#/components/schemas/Identifier"
+    BlockSourceAccountRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    SourceSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - postId
+      - accountId
+      - handle
+      - status
+      - reconciliationState
+      - publishedAt
+      - ingestedAt
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        postId:
+          type: string
+        accountId:
+          type: string
+        handle:
+          type: string
+        status:
+          type: string
+        reconciliationState:
+          type:
+          - string
+          - 'null'
+        publishedAt:
+          type: string
+          format: date-time
+        ingestedAt:
+          type: string
+          format: date-time
+    SourceAssociation:
+      type: object
+      additionalProperties: false
+      required:
+      - associationType
+      - associatedId
+      - state
+      properties:
+        associationType:
+          type: string
+        associatedId:
+          "$ref": "#/components/schemas/Identifier"
+        state:
+          type: string
+    SourceRelationship:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - relatedPostId
+      - relationshipType
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        relatedPostId:
+          type: string
+        relationshipType:
+          type: string
+    SourcePost:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - monitoredAccountId
+      - postId
+      - accountId
+      - handle
+      - canonicalUrl
+      - permittedText
+      - publishedAt
+      - ingestedAt
+      - status
+      - complianceAction
+      - reconciliationState
+      - complianceRequestedAt
+      - complianceReconciledAt
+      - complianceReason
+      - complianceError
+      - excludedAt
+      - contentDeletedAt
+      - associations
+      - relationships
+      - version
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        monitoredAccountId:
+          "$ref": "#/components/schemas/Identifier"
+        postId:
+          type: string
+        accountId:
+          type: string
+        handle:
+          type: string
+        canonicalUrl:
+          type: string
+          format: uri
+        permittedText:
+          type:
+          - string
+          - 'null'
+        publishedAt:
+          type: string
+          format: date-time
+        ingestedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+        complianceAction:
+          type:
+          - string
+          - 'null'
+        reconciliationState:
+          type:
+          - string
+          - 'null'
+        complianceRequestedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        complianceReconciledAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        complianceReason:
+          type:
+          - string
+          - 'null'
+        complianceError:
+          type:
+          - string
+          - 'null'
+        excludedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        contentDeletedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        associations:
+          type: array
+          items:
+            "$ref": "#/components/schemas/SourceAssociation"
+        relationships:
+          type: array
+          items:
+            "$ref": "#/components/schemas/SourceRelationship"
+        version:
+          type: integer
+          format: int64
+    ComplianceEditRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - permittedText
+      - reason
+      properties:
+        permittedText:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    ReconciliationRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - successful
+      - notes
+      properties:
+        successful:
+          type: boolean
+        notes:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    ImageGeneration:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - articleId
+      - prompt
+      - altText
+      - objectKey
+      - provider
+      - model
+      - safetyStatus
+      - createdAt
+      - approvedAt
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        articleId:
+          "$ref": "#/components/schemas/Identifier"
+        prompt:
+          type: string
+        altText:
+          type: string
+        objectKey:
+          type:
+          - string
+          - 'null'
+        provider:
+          type:
+          - string
+          - 'null'
+        model:
+          type:
+          - string
+          - 'null'
+        safetyStatus:
+          type:
+          - string
+          - 'null'
+        createdAt:
+          type: string
+          format: date-time
+        approvedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    ImageRegenerationRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - prompt
+      - altText
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        altText:
+          type: string
+          minLength: 1
+          maxLength: 500
+    OperationalSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      - checkedAt
+      - failedEvents
+      - details
+      properties:
+        status:
+          type: string
+          const: available
+        checkedAt:
+          type: string
+          format: date-time
+        failedEvents:
+          type: object
+          additionalProperties: false
+          required:
+          - eligible
+          - poison
+          - replayFailed
+          properties:
+            eligible:
+              type: integer
+            poison:
+              type: integer
+            replayFailed:
+              type: integer
+        details:
+          type: string
+    FailedEvent:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - eventId
+      - eventType
+      - aggregateId
+      - originalTopic
+      - originalPartition
+      - originalOffset
+      - consumerGroup
+      - exceptionClass
+      - exceptionMessage
+      - deliveryAttempt
+      - poisonMessage
+      - status
+      - failedAt
+      - lastUpdatedAt
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        eventId:
+          "$ref": "#/components/schemas/Identifier"
+        eventType:
+          type: string
+        aggregateId:
+          "$ref": "#/components/schemas/Identifier"
+        originalTopic:
+          type: string
+        originalPartition:
+          type: integer
+        originalOffset:
+          type: integer
+          format: int64
+        consumerGroup:
+          type: string
+        exceptionClass:
+          type: string
+        exceptionMessage:
+          type:
+          - string
+          - 'null'
+        deliveryAttempt:
+          type: integer
+        poisonMessage:
+          type: boolean
+        status:
+          type: string
+        failedAt:
+          type: string
+          format: date-time
+        lastUpdatedAt:
+          type: string
+          format: date-time
+    ReplayRequestCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - failedEventIds
+      - failedFrom
+      - failedTo
+      - maximumMessages
+      - messagesPerSecond
+      - dryRun
+      - includePoison
+      - reason
+      properties:
+        failedEventIds:
+          type:
+          - array
+          - 'null'
+          maxItems: 100
+          uniqueItems: true
+          items:
+            "$ref": "#/components/schemas/Identifier"
+        failedFrom:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        failedTo:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        maximumMessages:
+          type: integer
+          minimum: 1
+          maximum: 100
+        messagesPerSecond:
+          type: integer
+          minimum: 1
+          maximum: 20
+        dryRun:
+          type: boolean
+        includePoison:
+          type: boolean
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+    ReplayRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - actorId
+      - reason
+      - dryRun
+      - includePoison
+      - messagesPerSecond
+      - candidateCount
+      - replayedCount
+      - blockedCount
+      - status
+      - requestedAt
+      - completedAt
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        actorId:
+          "$ref": "#/components/schemas/Identifier"
+        reason:
+          type: string
+        dryRun:
+          type: boolean
+        includePoison:
+          type: boolean
+        messagesPerSecond:
+          type: integer
+        candidateCount:
+          type: integer
+        replayedCount:
+          type: integer
+        blockedCount:
+          type: integer
+        status:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type:
+          - string
+          - 'null'
+          format: date-time
+    ReplayRecord:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - failedEventId
+      - eventId
+      - aggregateId
+      - originalTopic
+      - outcome
+      - detail
+      - occurredAt
+      properties:
+        id:
+          "$ref": "#/components/schemas/Identifier"
+        failedEventId:
+          "$ref": "#/components/schemas/Identifier"
+        eventId:
+          "$ref": "#/components/schemas/Identifier"
+        aggregateId:
+          "$ref": "#/components/schemas/Identifier"
+        originalTopic:
+          type: string
+        outcome:
+          type: string
+        detail:
+          type:
+          - string
+          - 'null'
+        occurredAt:
+          type: string
+          format: date-time
+    SourceReasonRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500

@@ -1,0 +1,297 @@
+nameOverride: ""
+fullnameOverride: ""
+
+global:
+  environment: development
+  imagePullSecrets: []
+  podAnnotations: {}
+  podLabels: {}
+
+backendConfig:
+  SPRING_PROFILES_ACTIVE: ""
+  SERVER_FORWARD_HEADERS_STRATEGY: framework
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+  OTEL_RESOURCE_ATTRIBUTES: ""
+  DATABASE_URL: ""
+  DATABASE_POOL_SIZE: "20"
+  KAFKA_BOOTSTRAP_SERVERS: ""
+  KAFKA_SECURITY_PROTOCOL: SASL_SSL
+  KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+  REDIS_HOST: ""
+  REDIS_PORT: "6379"
+  REDIS_USERNAME: ""
+  REDIS_SSL_ENABLED: "true"
+  COOKIE_SECURE: "true"
+  MAIL_HOST: ""
+  MAIL_PORT: "587"
+  MAIL_USERNAME: ""
+  MAIL_SMTP_AUTH: "true"
+  MAIL_STARTTLS_ENABLE: "true"
+  MAIL_STARTTLS_REQUIRED: "true"
+  PUBLIC_BASE_URL: ""
+  PROVIDER_MODE: fake
+  AI_BASE_URL: https://api.openai.com
+  AI_MODEL: gpt-5-mini
+  AI_PROMPT_VERSION: editorial-v1
+  IMAGE_BASE_URL: https://api.openai.com
+  IMAGE_MODEL: gpt-image-1
+  S3_ENDPOINT: ""
+  S3_REGION: us-east-1
+  S3_BUCKET: news-media
+  PUBLICATION_POLICY: HUMAN_REVIEW_ALWAYS
+  COMMENTS_ENABLED: "true"
+  COMMENTS_REQUIRE_APPROVAL: "true"
+  NEWSLETTER_FROM_ADDRESS: news@example.invalid
+  OIDC_ISSUER_URI: ""
+  OIDC_CLIENT_ID: ""
+  OIDC_SUCCESS_URL: /
+  OIDC_REQUIRE_VERIFIED_EMAIL: "true"
+  OIDC_ROLES_CLAIM: roles
+  X_API_BASE_URL: https://api.x.com
+
+frontendConfig:
+  NODE_ENV: production
+  NEXT_TELEMETRY_DISABLED: "1"
+  NEXT_PUBLIC_API_URL: ""
+  NEXT_PUBLIC_API_MODE: api
+
+secret:
+  existingSecret: ""
+  env: {}
+  # Expected keys include DATABASE_USERNAME, DATABASE_PASSWORD, AI_API_KEY,
+  # IMAGE_API_KEY, S3_ACCESS_KEY, S3_SECRET_KEY, X_BEARER_TOKEN,
+  # NEWSLETTER_TOKEN_SECRET, NEWSLETTER_WEBHOOK_SECRET, OIDC_CLIENT_SECRET
+  # MAIL_PASSWORD, KAFKA_SASL_JAAS_CONFIG, and REDIS_PASSWORD.
+
+backend:
+  replicaCount: 1
+  minReadySeconds: 10
+  progressDeadlineSeconds: 600
+  terminationGracePeriodSeconds: 45
+  image:
+    repository: example.invalid/nsangusa/backend
+    tag: "1.0.0"
+    digest: ""
+    pullPolicy: IfNotPresent
+  service:
+    port: 8080
+  probes:
+    startup:
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 60
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    liveness:
+      periodSeconds: 20
+      timeoutSeconds: 3
+      failureThreshold: 3
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    cpuUtilization: 70
+    memoryUtilization: 80
+    scaleDownStabilizationSeconds: 300
+    scaleUpStabilizationSeconds: 0
+  pdb:
+    enabled: false
+    minAvailable: 1
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    readOnlyRootFilesystem: true
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+frontend:
+  replicaCount: 1
+  minReadySeconds: 10
+  progressDeadlineSeconds: 600
+  terminationGracePeriodSeconds: 30
+  image:
+    repository: example.invalid/nsangusa/frontend
+    tag: "1.0.0"
+    digest: ""
+    pullPolicy: IfNotPresent
+  service:
+    port: 3000
+  probes:
+    startup:
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 30
+    readiness:
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    liveness:
+      periodSeconds: 20
+      timeoutSeconds: 3
+      failureThreshold: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    cpuUtilization: 70
+    memoryUtilization: 80
+    scaleDownStabilizationSeconds: 300
+    scaleUpStabilizationSeconds: 0
+  pdb:
+    enabled: false
+    minAvailable: 1
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    readOnlyRootFilesystem: true
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+migration:
+  enabled: false
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
+  args:
+    - --spring.main.web-application-type=none
+    - --spring.kafka.listener.auto-startup=false
+    - --spring.task.scheduling.enabled=false
+    - --management.tracing.enabled=false
+    - --spring.main.lazy-initialization=true
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: nsangusa.example.invalid
+  backendPaths:
+    - /api
+    - /login
+    - /logout
+    - /oauth2
+  tls:
+    enabled: true
+    secretName: nsangusa-tls
+
+networkPolicy:
+  enabled: true
+  externalEgressManagedExternally: false
+  ingressNamespaceSelector:
+    kubernetes.io/metadata.name: ingress-nginx
+  ingressPodSelector:
+    app.kubernetes.io/name: ingress-nginx
+  dnsNamespaceSelector:
+    kubernetes.io/metadata.name: kube-system
+  dnsPodSelector:
+    k8s-app: kube-dns
+  backendExternalEgress: []
+  frontendExternalEgress: []
+  otelExternalEgress: []
+
+otelCollector:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: otel/opentelemetry-collector-contrib
+    tag: 0.132.0
+    digest: ""
+    pullPolicy: IfNotPresent
+  exporter:
+    endpoint: otlp.example.invalid:4317
+    existingSecret: ""
+    authorizationKey: OTEL_EXPORTER_OTLP_AUTHORIZATION
+    insecure: false
+  pdb:
+    enabled: true
+    minAvailable: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+  rbac:
+    enabled: true
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    readOnlyRootFilesystem: true
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

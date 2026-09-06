@@ -1,0 +1,6 @@
+package com.nsangusa.news.audit.internal;
+
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+interface AuditRepository extends JpaRepository<AuditEntity, UUID> {}

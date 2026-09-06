@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.nsangusa.invalid/events/article-published.schema.json",
+  "title": "ArticlePublished",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "const": "ArticlePublished"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["articleId", "slug", "headline", "publishedAt", "newsletterEligible"],
+          "properties": {
+            "articleId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "slug": {
+              "type": "string",
+              "minLength": 1
+            },
+            "headline": {
+              "type": "string",
+              "minLength": 1
+            },
+            "publishedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "newsletterEligible": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
+
