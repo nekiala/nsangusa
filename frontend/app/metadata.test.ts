@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateMetadata as utilityMetadata } from "./[page]/page";
 import { generateMetadata as topicMetadata } from "./topics/[topic]/page";
 import robots from "./robots";
+import { generateMetadata as rootMetadata } from "./layout";
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("frontend metadata", () => {
   it("uses human-readable auth titles and prevents indexing", async () => {
@@ -20,5 +23,12 @@ describe("frontend metadata", () => {
     expect(robots().rules).toEqual(expect.arrayContaining([
       expect.objectContaining({ disallow: expect.arrayContaining(["/admin"]) })
     ]));
+  });
+
+  it("uses the runtime publication origin for inherited metadata and robots, not the compiled fallback", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "http://build-time.invalid");
+    vi.stubEnv("PUBLIC_BASE_URL", "https://publication.example.test");
+    expect(rootMetadata().metadataBase).toEqual(new URL("https://publication.example.test/"));
+    expect(robots().sitemap).toBe("https://publication.example.test/sitemap.xml");
   });
 });

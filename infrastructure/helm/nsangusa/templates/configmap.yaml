@@ -6,6 +6,10 @@ metadata:
   labels:
     {{- include "nsangusa.labels" . | nindent 4 }}
 data:
+  {{- if .Values.monitoring.enabled }}
+  MANAGEMENT_SERVER_PORT: {{ .Values.monitoring.port | quote }}
+  NEWS_OPERATIONS_INTERNAL_METRICS_ENABLED: "true"
+  {{- end }}
   {{- range $key, $value := .Values.backendConfig }}
   {{ $key }}: {{ $value | toString | quote }}
   {{- end }}
@@ -24,4 +28,7 @@ data:
   {{- end }}
   {{- if not (hasKey .Values.frontendConfig "NSANGUSA_API_URL") }}
   NSANGUSA_API_URL: {{ printf "http://%s-backend:%v" (include "nsangusa.fullname" .) .Values.backend.service.port | quote }}
+  {{- end }}
+  {{- if not (hasKey .Values.frontendConfig "PUBLIC_BASE_URL") }}
+  PUBLIC_BASE_URL: {{ default "http://localhost:3000" (get .Values.backendConfig "PUBLIC_BASE_URL") | quote }}
   {{- end }}

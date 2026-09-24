@@ -3,13 +3,47 @@
   "type": "object",
   "additionalProperties": true,
   "properties": {
+    "monitoring": {
+      "type": "object",
+      "required": ["enabled", "port", "namespaceSelector", "podSelector", "serviceMonitor", "prometheusRule", "grafana"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "runbookUrl": {
+          "type": "string",
+          "pattern": "^(docs/reliability-operations\\.md|https://[^\\s\"<>]+)$"
+        },
+        "port": {"type": "integer", "const": 8081},
+        "namespaceSelector": {"type": "object", "additionalProperties": {"type": "string"}},
+        "podSelector": {"type": "object", "additionalProperties": {"type": "string"}},
+        "serviceMonitor": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "interval": {"type": "string", "pattern": "^[1-9][0-9]*(ms|s|m)$"},
+            "scrapeTimeout": {"type": "string", "pattern": "^[1-9][0-9]*(ms|s|m)$"},
+            "additionalLabels": {"type": "object", "additionalProperties": {"type": "string"}}
+          }
+        },
+        "prometheusRule": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "additionalLabels": {"type": "object", "additionalProperties": {"type": "string"}}
+          }
+        },
+        "grafana": {
+          "type": "object",
+          "properties": {"sidecarLabel": {"type": "string"}}
+        }
+      }
+    },
     "global": {
       "type": "object",
       "required": ["environment"],
       "properties": {
         "environment": {
           "type": "string",
-          "enum": ["development", "staging", "production"]
+          "enum": ["development", "test", "staging", "production"]
         },
         "imagePullSecrets": {
           "type": "array",

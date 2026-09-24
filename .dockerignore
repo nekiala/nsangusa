@@ -1,0 +1,7 @@
+.git
+.idea
+.local
+.github/artifacts
+**/.env*
+!**/.env.example
+**/*.log

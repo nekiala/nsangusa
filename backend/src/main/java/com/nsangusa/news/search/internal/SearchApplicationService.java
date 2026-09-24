@@ -56,7 +56,7 @@ class SearchApplicationService implements SearchService {
   @Override
   @Transactional
   public void indexPublished(UUID articleId) {
-    var article = articles.get(articleId);
+    var article = articles.getLocked(articleId);
     if (article.state() == ArticleState.PUBLISHED && article.publishedAt() != null) {
       documents.upsert(article);
     } else {
@@ -67,7 +67,7 @@ class SearchApplicationService implements SearchService {
   @Override
   @Transactional
   public void removeUnpublished(UUID articleId) {
-    documents.delete(articleId);
+    indexPublished(articleId);
   }
 
   private static int page(int page) {

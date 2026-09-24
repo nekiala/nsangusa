@@ -39,6 +39,7 @@ class NewsletterSubscription {
 
   Instant verifiedAt;
   Instant unsubscribedAt;
+  UUID userId;
 
   @Version long version;
 
@@ -62,6 +63,15 @@ class NewsletterSubscription {
   }
 
   void confirm(String token) {
+    if ("confirmed".equals(status)
+        && MessageDigest.isEqual(
+            verificationTokenHash.getBytes(StandardCharsets.UTF_8),
+            hash(token).getBytes(StandardCharsets.UTF_8))) {
+      return;
+    }
+    if (!"pending".equals(status)) {
+      throw new IllegalStateException("Subscription is not pending confirmation");
+    }
     if (!MessageDigest.isEqual(
         verificationTokenHash.getBytes(StandardCharsets.UTF_8),
         hash(token).getBytes(StandardCharsets.UTF_8))) {
@@ -78,19 +88,23 @@ class NewsletterSubscription {
         supplied.getBytes(StandardCharsets.UTF_8))) {
       throw new IllegalArgumentException("Invalid unsubscribe token");
     }
-    status = "unsubscribed";
-    unsubscribedAt = Instant.now();
+    withdrawConsent();
   }
 
-  void updateFrequency(String token, String frequency) {
-    String supplied = hash(token);
-    if (!MessageDigest.isEqual(
-        unsubscribeTokenHash.getBytes(StandardCharsets.UTF_8),
-        supplied.getBytes(StandardCharsets.UTF_8))) {
-      throw new IllegalArgumentException("Invalid preference token");
+  void withdrawConsent() {
+    if (!"suppressed".equals(status)) {
+      status = "unsubscribed";
     }
-    if (!java.util.Set.of("immediate", "daily", "weekly", "all").contains(frequency)) {
+    if (unsubscribedAt == null) unsubscribedAt = Instant.now();
+  }
+
+  void changeFrequency(String frequency) {
+    if (frequency == null
+        || !java.util.Set.of("immediate", "daily", "weekly", "all").contains(frequency)) {
       throw new IllegalArgumentException("Unsupported newsletter frequency");
+    }
+    if (!java.util.Set.of("pending", "confirmed").contains(status)) {
+      throw new IllegalStateException("No active newsletter subscription is linked");
     }
     this.frequency = frequency;
   }

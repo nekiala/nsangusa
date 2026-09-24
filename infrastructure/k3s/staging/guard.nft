@@ -1,0 +1,36 @@
+#!/usr/sbin/nft -f
+
+# Replace only this table, atomically; never flush the shared host's ruleset.
+destroy table inet nsangusa_k3s_guard
+table inet nsangusa_k3s_guard {
+    chain prerouting {
+        type filter hook prerouting priority -110; policy accept;
+
+        iifname "ens3" ip daddr { 127.0.0.0/8, 10.42.0.0/16, 10.43.0.0/16 } counter drop
+        iifname "ens3" ip6 daddr ::1 counter drop
+        ct state established,related return
+        iifname "ens3" tcp dport 30000-32767 counter drop
+        iifname "ens3" udp dport 30000-32767 counter drop
+        iifname "ens3" sctp dport 30000-32767 counter drop
+    }
+
+    chain input {
+        type filter hook input priority -10; policy accept;
+
+        iifname "lo" return
+        ct state established,related return
+        iifname "cni0" ip saddr 10.42.0.0/16 tcp dport { 6443, 10250 } counter return
+        tcp dport { 2379-2382, 6443-6444, 10010, 10248-10250, 10255-10259 } counter drop
+        tcp dport 30000-32767 counter drop
+        udp dport 30000-32767 counter drop
+        sctp dport 30000-32767 counter drop
+        udp dport 8472 counter drop
+    }
+
+    chain forward {
+        type filter hook forward priority -10; policy accept;
+
+        ct state established,related return
+        iifname "ens3" ip daddr 10.42.0.0/16 counter drop
+    }
+}

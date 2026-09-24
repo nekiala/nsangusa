@@ -1,0 +1,18 @@
+[Unit]
+Description=Renew only the Nsangusa staging TLS certificate
+Wants=network-online.target
+After=network-online.target nginx.service
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStartPre=/usr/bin/test -s /etc/nsangusa-acme/renewal/staging.nsangusa.com.conf
+ExecStartPre=/usr/bin/systemctl is-active --quiet nginx.service
+ExecStart=/usr/bin/certbot renew --config /etc/nsangusa-acme/cli.ini --cert-name staging.nsangusa.com --deploy-hook /usr/local/libexec/nsangusa-acme-reload --quiet
+ExecStartPost=/usr/local/libexec/nsangusa-acme-verify
+TimeoutStartSec=15min
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/etc/nsangusa-acme /var/lib/nsangusa-acme /var/log/nsangusa-acme /var/www/nsangusa-acme
+NoNewPrivileges=true

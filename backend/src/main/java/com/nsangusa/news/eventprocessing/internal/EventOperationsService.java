@@ -2,6 +2,7 @@ package com.nsangusa.news.eventprocessing.internal;
 
 import com.nsangusa.news.eventprocessing.EventOperations;
 import com.nsangusa.news.eventprocessing.ReplaySafetyRegistry;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -13,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,6 +60,106 @@ class EventOperationsService implements EventOperations, ReplaySafetyRegistry {
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public FailedEventPage failedPage(String status, int page, int size) {
+    validatePage(page, size);
+    if (status != null
+        && !java.util.Set.of(
+                "eligible", "poison", "replay_pending", "replayed", "replay_failed", "suppressed")
+            .contains(status)) {
+      throw new IllegalArgumentException("Unknown failed-event status");
+    }
+    var pageable =
+        PageRequest.of(
+            page,
+            size,
+            org.springframework.data.domain.Sort.by(
+                org.springframework.data.domain.Sort.Order.desc("failedAt"),
+                org.springframework.data.domain.Sort.Order.desc("id")));
+    var result =
+        status == null
+            ? failedEvents.findAll(pageable)
+            : failedEvents.findByStatus(status, pageable);
+    return new FailedEventPage(
+        result.stream().map(EventOperationsService::toView).toList(),
+        page,
+        size,
+        result.getTotalElements());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public ReplayPage replays(int page, int size) {
+    validatePage(page, size);
+    var result =
+        requests.findAll(
+            PageRequest.of(
+                page,
+                size,
+                org.springframework.data.domain.Sort.by(
+                    org.springframework.data.domain.Sort.Order.desc("requestedAt"),
+                    org.springframework.data.domain.Sort.Order.desc("id"))));
+    return new ReplayPage(
+        result.stream().map(EventOperationsService::toView).toList(),
+        page,
+        size,
+        result.getTotalElements());
+  }
+
+  @Override
+  @Transactional
+  public ReplayRequestView confirmReplay(UUID previewId, UUID actorId) {
+    var preview =
+        requests
+            .findLockedById(previewId)
+            .orElseThrow(
+                () ->
+                    new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Replay preview not found"));
+    if (!preview.actorId.equals(actorId)) {
+      throw new org.springframework.security.access.AccessDeniedException(
+          "Only the administrator who reviewed this preview can confirm it");
+    }
+    if (!preview.dryRun || !"dry_run_complete".equals(preview.status)) {
+      throw new IllegalStateException("A completed dry-run preview is required");
+    }
+    if (preview.confirmedRequestId != null) return getReplay(preview.confirmedRequestId);
+    if (preview.requestedAt.isBefore(Instant.now().minus(Duration.ofMinutes(15)))) {
+      throw new IllegalStateException("Replay preview expired; run a fresh dry run");
+    }
+    var ids =
+        records.findByReplayRequestIdOrderByOccurredAtAsc(previewId).stream()
+            .filter(record -> "dry_run".equals(record.outcome) && "eligible".equals(record.detail))
+            .map(record -> record.failedEventId)
+            .collect(java.util.stream.Collectors.toSet());
+    if (ids.isEmpty()) throw new IllegalStateException("The preview has no eligible messages");
+    var result =
+        requestReplay(
+            new ReplayCommand(
+                ids,
+                null,
+                null,
+                ids.size(),
+                preview.messagesPerSecond,
+                false,
+                preview.includePoison,
+                actorId,
+                preview.reason,
+                preview.auditMetadata));
+    if (result.candidateCount() != ids.size()) {
+      throw new IllegalStateException("Replay eligibility changed; run a fresh dry run");
+    }
+    preview.confirmedRequestId = result.id();
+    return result;
+  }
+
+  private static void validatePage(int page, int size) {
+    if (page < 0 || page > 10_000 || size < 1 || size > 100) {
+      throw new IllegalArgumentException("Page must be 0-10000 and size 1-100");
+    }
+  }
+
+  @Override
   @Transactional
   public ReplayRequestView requestReplay(ReplayCommand command) {
     validate(command);
@@ -76,7 +178,15 @@ class EventOperationsService implements EventOperations, ReplaySafetyRegistry {
                 command.auditMetadata()));
     for (var failure : candidates) {
       if (command.dryRun()) {
-        records.save(new EventReplayRecord(request, failure, "dry_run", "eligible"));
+        String blockedReason = replayBlockReason(failure);
+        boolean blocked = blockedReason != null;
+        if (blocked) request.blockedCount++;
+        records.save(
+            new EventReplayRecord(
+                request,
+                failure,
+                blocked ? "blocked" : "dry_run",
+                blocked ? blockedReason : "eligible"));
       } else {
         failure.status = "replay_pending";
         failure.lastUpdatedAt = Instant.now();
@@ -111,7 +221,9 @@ class EventOperationsService implements EventOperations, ReplaySafetyRegistry {
                     record.aggregateId,
                     record.originalTopic,
                     record.outcome,
-                    record.detail,
+                    "failed".equals(record.outcome)
+                        ? EventFailurePolicy.publicMessage(record.detail, false)
+                        : record.detail,
                     record.occurredAt))
         .toList();
   }
@@ -146,6 +258,7 @@ class EventOperationsService implements EventOperations, ReplaySafetyRegistry {
     }
     var request = ready.getFirst();
     request.status = "processing";
+    request.nextReplayAt = Instant.now().plusSeconds(1);
     var batch =
         items.findByReplayRequestIdAndStatusOrderById(
             request.id, "pending", PageRequest.of(0, request.messagesPerSecond));
@@ -163,13 +276,16 @@ class EventOperationsService implements EventOperations, ReplaySafetyRegistry {
         failedEvents
             .findById(item.failedEventId)
             .orElseThrow(() -> new IllegalStateException("Replay failure record disappeared"));
-    if (failure.aggregateId != null && suppressions.existsById(failure.aggregateId)) {
+    String blockedReason = replayBlockReason(failure);
+    if (blockedReason != null) {
       item.status = "blocked";
-      failure.status = "suppressed";
+      failure.status =
+          "aggregate is compliance-suppressed".equals(blockedReason)
+              ? "suppressed"
+              : "replay_failed";
       failure.lastUpdatedAt = Instant.now();
       request.blockedCount++;
-      records.save(
-          new EventReplayRecord(request, failure, "blocked", "aggregate is compliance-suppressed"));
+      records.save(new EventReplayRecord(request, failure, "blocked", blockedReason));
       return;
     }
     try {
@@ -177,12 +293,29 @@ class EventOperationsService implements EventOperations, ReplaySafetyRegistry {
           failure.aggregateId != null
               ? failure.aggregateId.toString()
               : failure.eventId != null ? failure.eventId.toString() : failure.id.toString();
-      var record = new ProducerRecord<String, String>(failure.originalTopic, key, failure.payload);
+      var record =
+          new ProducerRecord<String, String>(
+              failure.originalTopic, failure.originalPartition, key, failure.payload);
       record
           .headers()
           .add("x-replay-request-id", request.id.toString().getBytes(StandardCharsets.UTF_8))
           .add("x-original-dlt-id", failure.id.toString().getBytes(StandardCharsets.UTF_8))
-          .add("x-replayed-by", request.actorId.toString().getBytes(StandardCharsets.UTF_8));
+          .add("x-replayed-by", request.actorId.toString().getBytes(StandardCharsets.UTF_8))
+          .add(
+              EventFailurePolicy.REPLAY_GROUP_HEADER,
+              failure.consumerGroup.getBytes(StandardCharsets.UTF_8))
+          .add(
+              KafkaHeaders.DLT_ORIGINAL_TOPIC,
+              failure.originalTopic.getBytes(StandardCharsets.UTF_8))
+          .add(
+              KafkaHeaders.DLT_ORIGINAL_PARTITION,
+              ByteBuffer.allocate(4).putInt(failure.originalPartition).array())
+          .add(
+              KafkaHeaders.DLT_ORIGINAL_OFFSET,
+              ByteBuffer.allocate(8).putLong(failure.originalOffset).array())
+          .add(
+              KafkaHeaders.DLT_ORIGINAL_CONSUMER_GROUP,
+              failure.consumerGroup.getBytes(StandardCharsets.UTF_8));
       kafkaTemplate.send(record).get(10, TimeUnit.SECONDS);
       item.status = "replayed";
       failure.status = "replayed";
@@ -202,6 +335,25 @@ class EventOperationsService implements EventOperations, ReplaySafetyRegistry {
     }
   }
 
+  private String replayBlockReason(FailedEvent failure) {
+    if (failure.consumerGroup == null
+        || failure.consumerGroup.isBlank()
+        || "failure-metadata-v1".equals(failure.consumerGroup)
+        || failure.originalTopic == null
+        || !failure.originalTopic.startsWith("news.")
+        || failure.originalTopic.endsWith(".dlt")
+        || failure.originalTopic.endsWith("-dlt")
+        || failure.originalTopic.contains(".retry")
+        || failure.originalTopic.contains("-retry")
+        || failure.originalPartition < 0
+        || failure.originalOffset < 0) {
+      return "original workflow topic, partition, offset and consumer group are required";
+    }
+    return failure.aggregateId != null && suppressions.existsById(failure.aggregateId)
+        ? "aggregate is compliance-suppressed"
+        : null;
+  }
+
   private List<FailedEvent> selectCandidates(ReplayCommand command) {
     List<FailedEvent> selected;
     if (command.failedEventIds() != null && !command.failedEventIds().isEmpty()) {
@@ -219,7 +371,8 @@ class EventOperationsService implements EventOperations, ReplaySafetyRegistry {
     return selected.stream()
         .filter(
             event ->
-                "eligible".equals(event.status)
+                (java.util.Set.of("eligible", "replay_failed").contains(event.status)
+                        && (!event.poisonMessage || command.includePoison()))
                     || (command.includePoison() && "poison".equals(event.status)))
         .limit(command.maximumMessages())
         .toList();
@@ -276,7 +429,7 @@ class EventOperationsService implements EventOperations, ReplaySafetyRegistry {
         event.originalOffset,
         event.consumerGroup,
         event.exceptionClass,
-        event.exceptionMessage,
+        EventFailurePolicy.publicMessage(event.exceptionMessage, event.poisonMessage),
         event.deliveryAttempt,
         event.poisonMessage,
         event.status,
@@ -301,9 +454,6 @@ class EventOperationsService implements EventOperations, ReplaySafetyRegistry {
   }
 
   private static String safeMessage(Exception exception) {
-    String message = exception.getMessage();
-    return message == null
-        ? exception.getClass().getSimpleName()
-        : message.substring(0, Math.min(message.length(), 2_000));
+    return EventFailurePolicy.safeMessage(EventFailurePolicy.category(exception));
   }
 }

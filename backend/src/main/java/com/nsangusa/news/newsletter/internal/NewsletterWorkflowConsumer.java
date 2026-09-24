@@ -7,7 +7,6 @@ import com.nsangusa.news.integration.EventTopics;
 import com.nsangusa.news.integration.NewsEvents.ArticlePublished;
 import com.nsangusa.news.integration.NewsEvents.NewsletterDispatchRequested;
 import java.util.List;
-import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
@@ -101,7 +100,7 @@ class NewsletterWorkflowConsumer {
       if (suppressions.existsByEmailHash(hash(subscription.email))) {
         continue;
       }
-      UUID deliveryId;
+      NewsletterDeliveryReservationService.DeliveryAttempt attempt;
       try {
         var reservation =
             deliveryReservations.reserve(
@@ -109,7 +108,7 @@ class NewsletterWorkflowConsumer {
         if (reservation.isEmpty()) {
           continue;
         }
-        deliveryId = reservation.orElseThrow();
+        attempt = reservation.orElseThrow();
       } catch (org.springframework.dao.DataIntegrityViolationException duplicateReservation) {
         continue;
       }
@@ -121,7 +120,14 @@ class NewsletterWorkflowConsumer {
               + "&token="
               + unsubscribeTokens.tokenFor(subscription.id);
       String text =
-          event.payload().headline() + "\n\n" + articleUrl + "\n\nUnsubscribe: " + unsubscribeUrl;
+          event.payload().headline()
+              + "\n\n"
+              + articleUrl
+              + "\n\nUnsubscribe: "
+              + unsubscribeUrl
+              + "\nManage preferences: "
+              + publicBaseUrl
+              + "/newsletter/preferences";
       String html =
           "<h1>"
               + org.owasp.encoder.Encode.forHtml(event.payload().headline())
@@ -129,13 +135,26 @@ class NewsletterWorkflowConsumer {
               + org.owasp.encoder.Encode.forHtmlAttribute(articleUrl)
               + "\">Read the article</a></p><p><a href=\""
               + org.owasp.encoder.Encode.forHtmlAttribute(unsubscribeUrl)
-              + "\">Unsubscribe</a></p>";
+              + "\">Unsubscribe</a></p><p><a href=\""
+              + org.owasp.encoder.Encode.forHtmlAttribute(publicBaseUrl + "/newsletter/preferences")
+              + "\">Manage preferences</a></p>";
       try {
         deliveryReservations.delivered(
-            deliveryId,
-            mailSender.send(subscription.email, event.payload().headline(), text, html));
+            attempt.deliveryId(),
+            attempt.attemptToken(),
+            mailSender.sendNewsletter(
+                attempt.providerIdempotencyKey(),
+                subscription.email,
+                event.payload().headline(),
+                text,
+                html,
+                publicBaseUrl
+                    + "/api/v1/newsletter/unsubscribe?id="
+                    + subscription.id
+                    + "&token="
+                    + unsubscribeTokens.tokenFor(subscription.id)));
       } catch (RuntimeException exception) {
-        deliveryReservations.failed(deliveryId, "provider_error");
+        deliveryReservations.failed(attempt.deliveryId(), attempt.attemptToken(), "provider_error");
         throw exception;
       }
     }

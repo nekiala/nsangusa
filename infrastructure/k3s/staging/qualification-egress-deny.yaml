@@ -1,0 +1,11 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: client-egress
+  namespace: nsangusa-k3s-qualification
+spec:
+  podSelector:
+    matchLabels:
+      app: qualification-client
+  policyTypes: [Egress]
+  egress: []

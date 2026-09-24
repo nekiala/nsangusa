@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Explicit model of strict six-field legacy ArticleImageApproved consumer, NOT a released binary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["articleId", "generationId", "objectKey", "altText", "approvedBy", "approvedAt"],
+  "properties": {
+    "articleId": {"type": "string", "format": "uuid"},
+    "generationId": {"type": "string", "format": "uuid"},
+    "objectKey": {"type": "string", "minLength": 1},
+    "altText": {"type": "string", "minLength": 1},
+    "approvedBy": {"type": "string", "format": "uuid"},
+    "approvedAt": {"type": "string", "format": "date-time"}
+  }
+}

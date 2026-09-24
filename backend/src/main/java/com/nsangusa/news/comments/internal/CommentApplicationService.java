@@ -6,18 +6,24 @@ import com.nsangusa.news.audit.AuditService;
 import com.nsangusa.news.comments.CommentService;
 import com.nsangusa.news.comments.SpamDecisionSupport;
 import com.nsangusa.news.eventprocessing.DurableEventPublisher;
+import com.nsangusa.news.identity.IdentityService;
 import com.nsangusa.news.integration.NewsEvents.CommentSubmitted;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 class CommentApplicationService implements CommentService {
@@ -26,6 +32,7 @@ class CommentApplicationService implements CommentService {
       Set.of("abuse", "harassment", "hate", "misinformation", "spam", "other");
 
   private final ArticleService articles;
+  private final IdentityService identity;
   private final CommentRepository comments;
   private final ModerationActionRepository moderation;
   private final CommentReportRepository reports;
@@ -40,6 +47,7 @@ class CommentApplicationService implements CommentService {
 
   CommentApplicationService(
       ArticleService articles,
+      IdentityService identity,
       CommentRepository comments,
       ModerationActionRepository moderation,
       CommentReportRepository reports,
@@ -57,6 +65,7 @@ class CommentApplicationService implements CommentService {
       @Value("${news.comments.spam-reject-threshold:0.90}") double rejectSpamThreshold,
       @Value("${news.comments.report-escalation-threshold:3}") int reportEscalationThreshold) {
     this.articles = articles;
+    this.identity = identity;
     this.comments = comments;
     this.moderation = moderation;
     this.reports = reports;
@@ -108,18 +117,19 @@ class CommentApplicationService implements CommentService {
 
   @Override
   @Transactional
-  public void edit(UUID commentId, UUID authorId, String body) {
-    var comment = find(commentId);
+  public void edit(UUID commentId, UUID authorId, String body, long expectedVersion) {
+    var comment = locked(commentId);
     if (!comment.authorId.equals(authorId)) {
-      throw new IllegalArgumentException("Only the author can edit this comment");
+      throw new AccessDeniedException("Only the author can edit this comment");
     }
+    version(comment.version, expectedVersion);
     if (comment.deletedAt != null || "deleted".equals(comment.state)) {
       throw new IllegalStateException("Deleted comments cannot be edited");
     }
     var policy = policy(comment.articleId);
     ensureCanComment(authorId, policy);
-    if (Instant.now()
-        .isAfter(comment.createdAt.plus(policy.editingWindowMinutes, ChronoUnit.MINUTES))) {
+    if (!Instant.now()
+        .isBefore(comment.createdAt.plus(policy.editingWindowMinutes, ChronoUnit.MINUTES))) {
       throw new IllegalStateException("Comment editing window has expired");
     }
     String safeBody = safeBody(body);
@@ -130,15 +140,17 @@ class CommentApplicationService implements CommentService {
     comment.state = stateFor(assessment.score(), policy);
     comment.editedAt = Instant.now();
     comment.updatedAt = comment.editedAt;
+    audit.record(authorId, "COMMENT_EDITED", "comment", commentId, Map.of());
   }
 
   @Override
   @Transactional
-  public void deleteByAuthor(UUID commentId, UUID authorId) {
-    var comment = find(commentId);
+  public void deleteByAuthor(UUID commentId, UUID authorId, long expectedVersion) {
+    var comment = locked(commentId);
     if (!comment.authorId.equals(authorId)) {
-      throw new IllegalArgumentException("Only the author can delete this comment");
+      throw new AccessDeniedException("Only the author can delete this comment");
     }
+    version(comment.version, expectedVersion);
     if (comment.deletedAt == null) {
       comment.body = "[deleted]";
       comment.deletedAt = Instant.now();
@@ -149,6 +161,7 @@ class CommentApplicationService implements CommentService {
       if (!"approved".equals(comment.state)) {
         comment.state = "deleted";
       }
+      audit.record(authorId, "COMMENT_DELETED_BY_AUTHOR", "comment", commentId, Map.of());
     }
   }
 
@@ -159,7 +172,10 @@ class CommentApplicationService implements CommentService {
     if (!REPORT_REASONS.contains(normalizedReason)) {
       throw new IllegalArgumentException("Unsupported report reason");
     }
-    var comment = find(commentId);
+    var comment = locked(commentId);
+    if (!policy(comment.articleId).enabled || !visibleParent(comment)) {
+      throw new IllegalStateException("Only visible comments can be reported");
+    }
     if (comment.authorId.equals(reporterId)) {
       throw new IllegalArgumentException("Authors cannot report their own comments");
     }
@@ -178,21 +194,25 @@ class CommentApplicationService implements CommentService {
       comment.state = "pending";
       comment.updatedAt = Instant.now();
     }
+    audit.record(
+        reporterId, "COMMENT_REPORTED", "comment", commentId, Map.of("reason", normalizedReason));
     return report.id;
   }
 
   @Override
   @Transactional
-  public void moderate(UUID commentId, String decision, String reason, UUID moderatorId) {
+  public void moderate(
+      UUID commentId, String decision, String reason, UUID moderatorId, long expectedVersion) {
     String normalizedDecision = required(decision, "Moderation decision").toLowerCase(Locale.ROOT);
     if (!DECISIONS.contains(normalizedDecision)) {
       throw new IllegalArgumentException("Unsupported moderation decision");
     }
-    String safeReason = optional(reason, 2_000);
-    if (!"approved".equals(normalizedDecision) && safeReason == null) {
-      throw new IllegalArgumentException("A reason is required for this moderation decision");
+    String safeReason = requiredReason(reason);
+    var comment = locked(commentId);
+    version(comment.version, expectedVersion);
+    if (comment.deletedAt != null || "deleted".equals(comment.state)) {
+      throw new IllegalStateException("Deleted comments cannot be moderated again");
     }
-    var comment = find(commentId);
     String previousState = comment.state;
     comment.state = normalizedDecision;
     comment.updatedAt = Instant.now();
@@ -221,9 +241,87 @@ class CommentApplicationService implements CommentService {
     if (!policy(articleId).enabled) {
       return List.of();
     }
-    return comments.findByArticleIdAndStateOrderByCreatedAt(articleId, "approved").stream()
-        .map(this::view)
-        .toList();
+    return views(visibleComments(articleId));
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public DiscussionView discussion(UUID articleId, UUID viewerId, boolean eligible) {
+    var policy = policy(articleId);
+    var privilege = viewerId == null ? null : privilege(viewerId);
+    boolean suspended = privilege != null && "suspended".equals(privilege.status());
+    var visible = new LinkedHashMap<UUID, Comment>();
+    if (policy.enabled) {
+      visibleComments(articleId).forEach(comment -> visible.put(comment.id, comment));
+      if (viewerId != null) {
+        comments
+            .findByArticleIdAndAuthorIdOrderByCreatedAt(articleId, viewerId)
+            .forEach(comment -> visible.put(comment.id, comment));
+      }
+    }
+    return new DiscussionView(
+        views(List.copyOf(visible.values())),
+        viewerId,
+        viewerId != null,
+        eligible,
+        policy.enabled,
+        policy.requireApproval,
+        policy.editingWindowMinutes,
+        1,
+        suspended ? "suspended" : "allowed",
+        privilege == null ? null : privilege.suspendedUntil(),
+        viewerId != null && eligible && policy.enabled && !suspended);
+  }
+
+  private List<Comment> visibleComments(UUID articleId) {
+    var approved = comments.findByArticleIdAndStateOrderByCreatedAt(articleId, "approved");
+    var result = new LinkedHashMap<UUID, Comment>();
+    for (var comment : approved) {
+      if (comment.parentId == null) {
+        result.put(comment.id, comment);
+      } else {
+        var parent = comments.findById(comment.parentId).orElse(null);
+        if (parent != null
+            && parent.articleId.equals(articleId)
+            && ("approved".equals(parent.state) || "deleted".equals(parent.state))) {
+          result.put(parent.id, parent);
+          result.put(comment.id, comment);
+        }
+      }
+    }
+    return List.copyOf(result.values());
+  }
+
+  private boolean visibleParent(Comment comment) {
+    if (comment.parentId == null) return true;
+    return comments
+        .findById(comment.parentId)
+        .filter(
+            parent ->
+                parent.articleId.equals(comment.articleId)
+                    && parent.parentId == null
+                    && ("approved".equals(parent.state) || "deleted".equals(parent.state)))
+        .isPresent();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public ModerationPage moderationPage(String state, UUID articleId, int page, int size) {
+    if (state != null
+        && !Set.of("pending", "approved", "rejected", "spam", "deleted").contains(state)) {
+      throw new IllegalArgumentException("Unsupported comment state");
+    }
+    if (page < 0 || page > 100_000)
+      throw new IllegalArgumentException("Page must be between 0 and 100000");
+    var result = comments.queue(state, articleId, PageRequest.of(page, limit(size)));
+    return new ModerationPage(
+        result.stream().map(this::queueView).toList(), page, size, result.getTotalElements());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public ModerationQueueItem moderationDetail(UUID commentId) {
+    return queueView(find(commentId));
   }
 
   @Override
@@ -233,18 +331,7 @@ class CommentApplicationService implements CommentService {
     return comments
         .findByStateInOrderByCreatedAtAsc(Set.of("pending", "spam"), PageRequest.of(0, bounded))
         .stream()
-        .map(
-            comment ->
-                new ModerationQueueItem(
-                    comment.id,
-                    comment.articleId,
-                    comment.authorId,
-                    comment.body,
-                    comment.state,
-                    comment.spamScore,
-                    comment.spamReason,
-                    reports.countByCommentIdAndStatus(comment.id, "open"),
-                    comment.createdAt))
+        .map(this::queueView)
         .toList();
   }
 
@@ -269,7 +356,9 @@ class CommentApplicationService implements CommentService {
   @Transactional(readOnly = true)
   public List<ModerationHistoryView> moderationHistory(UUID commentId) {
     find(commentId);
-    return moderation.findByCommentIdOrderByCreatedAtDesc(commentId).stream()
+    return moderation
+        .findByCommentIdOrderByCreatedAtDesc(commentId, PageRequest.of(0, 100))
+        .stream()
         .map(
             action ->
                 new ModerationHistoryView(
@@ -284,12 +373,15 @@ class CommentApplicationService implements CommentService {
 
   @Override
   @Transactional
-  public void suspend(UUID userId, Instant until, String reason, UUID moderatorId) {
+  public void suspend(
+      UUID userId, Instant until, String reason, UUID moderatorId, long expectedVersion) {
     if (until != null && !until.isAfter(Instant.now())) {
       throw new IllegalArgumentException("Suspension end must be in the future");
     }
-    String safeReason = required(reason, "Suspension reason");
-    var privilege = privileges.findById(userId).orElseGet(() -> new CommentingPrivilege(userId));
+    String safeReason = requiredReason(reason);
+    var existing = privileges.findById(userId);
+    version(existing.map(value -> value.version).orElse(-1L), expectedVersion);
+    var privilege = existing.orElseGet(() -> new CommentingPrivilege(userId));
     privilege.suspend(until, safeReason, moderatorId);
     privileges.save(privilege);
     privilegeRecords.save(
@@ -304,9 +396,11 @@ class CommentApplicationService implements CommentService {
 
   @Override
   @Transactional
-  public void restorePrivilege(UUID userId, String reason, UUID moderatorId) {
-    String safeReason = required(reason, "Restoration reason");
-    var privilege = privileges.findById(userId).orElseGet(() -> new CommentingPrivilege(userId));
+  public void restorePrivilege(UUID userId, String reason, UUID moderatorId, long expectedVersion) {
+    String safeReason = requiredReason(reason);
+    var existing = privileges.findById(userId);
+    version(existing.map(value -> value.version).orElse(-1L), expectedVersion);
+    var privilege = existing.orElseGet(() -> new CommentingPrivilege(userId));
     privilege.restore(safeReason, moderatorId);
     privileges.save(privilege);
     privilegeRecords.save(
@@ -320,13 +414,15 @@ class CommentApplicationService implements CommentService {
     return privileges
         .findById(userId)
         .map(this::view)
-        .orElseGet(() -> new PrivilegeView(userId, "allowed", null, null, null, Instant.EPOCH));
+        .orElseGet(() -> new PrivilegeView(userId, "allowed", null, null, null, Instant.EPOCH, -1));
   }
 
   @Override
   @Transactional(readOnly = true)
   public List<PrivilegeHistoryView> privilegeHistory(UUID userId) {
-    return privilegeRecords.findByUserIdOrderByCreatedAtDesc(userId).stream()
+    return privilegeRecords
+        .findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(0, 100))
+        .stream()
         .map(
             record ->
                 new PrivilegeHistoryView(
@@ -342,12 +438,27 @@ class CommentApplicationService implements CommentService {
   @Override
   @Transactional(readOnly = true)
   public GlobalSettingsView globalSettings() {
-    return view(currentSettings());
+    return settings
+        .findById(1)
+        .map(this::view)
+        .orElseGet(
+            () ->
+                new GlobalSettingsView(
+                    defaults.enabled,
+                    defaults.requireApproval,
+                    defaults.editingWindowMinutes,
+                    defaults.reviewSpamThreshold,
+                    defaults.rejectSpamThreshold,
+                    defaults.reportEscalationThreshold,
+                    defaults.updatedAt,
+                    -1));
   }
 
   @Override
   @Transactional
-  public void updateGlobalSettings(GlobalSettingsCommand command, UUID moderatorId) {
+  public void updateGlobalSettings(
+      GlobalSettingsCommand command, UUID moderatorId, long expectedVersion) {
+    version(settings.findById(1).map(value -> value.version).orElse(-1L), expectedVersion);
     var setting =
         settings
             .findById(1)
@@ -379,14 +490,17 @@ class CommentApplicationService implements CommentService {
     return articleSettings
         .findById(articleId)
         .map(this::view)
-        .orElseGet(() -> new ArticleSettingsView(articleId, null, null, Instant.EPOCH));
+        .orElseGet(() -> new ArticleSettingsView(articleId, null, null, Instant.EPOCH, -1));
   }
 
   @Override
   @Transactional
   public void updateArticleSettings(
-      UUID articleId, ArticleSettingsCommand command, UUID moderatorId) {
+      UUID articleId, ArticleSettingsCommand command, UUID moderatorId, long expectedVersion) {
     articles.get(articleId);
+    version(
+        articleSettings.findById(articleId).map(value -> value.version).orElse(-1L),
+        expectedVersion);
     var setting =
         articleSettings.findById(articleId).orElseGet(() -> new ArticleCommentSettings(articleId));
     setting.update(command.enabledOverride(), command.requireApprovalOverride(), moderatorId);
@@ -432,7 +546,7 @@ class CommentApplicationService implements CommentService {
     if (parentId == null) {
       return;
     }
-    var parent = find(parentId);
+    var parent = locked(parentId);
     if (!parent.articleId.equals(articleId)
         || parent.parentId != null
         || parent.deletedAt != null
@@ -458,19 +572,73 @@ class CommentApplicationService implements CommentService {
   private Comment find(UUID id) {
     return comments
         .findById(id)
-        .orElseThrow(() -> new IllegalArgumentException("Comment not found"));
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Comment not found"));
   }
 
-  private CommentView view(Comment comment) {
+  private Comment locked(UUID id) {
+    return comments
+        .findLockedById(id)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Comment not found"));
+  }
+
+  private static void version(long actual, long expected) {
+    if (actual != expected)
+      throw new OptimisticLockingFailureException(
+          "Comment resource has changed; refresh and retry");
+  }
+
+  private static String requiredReason(String reason) {
+    return optional(required(reason, "Reason"), 2_000);
+  }
+
+  private ModerationQueueItem queueView(Comment comment) {
+    var article = articles.get(comment.articleId);
+    return new ModerationQueueItem(
+        comment.id,
+        comment.articleId,
+        comment.authorId,
+        identity.displayNames(Set.of(comment.authorId)).getOrDefault(comment.authorId, "Reader"),
+        comment.body,
+        comment.state,
+        comment.spamScore,
+        comment.spamReason,
+        reports.countByCommentIdAndStatus(comment.id, "open"),
+        comment.createdAt,
+        comment.editedAt,
+        comment.deletedByAuthor,
+        comment.parentId,
+        comment.deletedAt != null,
+        comment.version,
+        article.headline(),
+        article.slug());
+  }
+
+  private List<CommentView> views(List<Comment> source) {
+    var authorIds = source.stream().map(comment -> comment.authorId).distinct().toList();
+    var names = new java.util.HashMap<UUID, String>();
+    for (int offset = 0; offset < authorIds.size(); offset += 100) {
+      names.putAll(
+          identity.displayNames(
+              Set.copyOf(authorIds.subList(offset, Math.min(offset + 100, authorIds.size())))));
+    }
+    return source.stream()
+        .map(comment -> view(comment, names.getOrDefault(comment.authorId, "Reader")))
+        .toList();
+  }
+
+  private CommentView view(Comment comment, String authorName) {
     return new CommentView(
         comment.id,
         comment.authorId,
+        authorName,
         comment.body,
         comment.parentId,
         comment.state,
         comment.createdAt,
         comment.editedAt,
-        comment.deletedByAuthor);
+        comment.deletedByAuthor,
+        comment.deletedAt != null,
+        comment.version);
   }
 
   private PrivilegeView view(CommentingPrivilege privilege) {
@@ -481,7 +649,8 @@ class CommentApplicationService implements CommentService {
         privilege.suspendedUntil,
         privilege.reason,
         privilege.moderatorId,
-        privilege.updatedAt);
+        privilege.updatedAt,
+        privilege.version);
   }
 
   private GlobalSettingsView view(CommentGlobalSettings setting) {
@@ -492,7 +661,8 @@ class CommentApplicationService implements CommentService {
         setting.reviewSpamThreshold,
         setting.rejectSpamThreshold,
         setting.reportEscalationThreshold,
-        setting.updatedAt);
+        setting.updatedAt,
+        setting.version);
   }
 
   private ArticleSettingsView view(ArticleCommentSettings setting) {
@@ -500,7 +670,8 @@ class CommentApplicationService implements CommentService {
         setting.articleId,
         setting.enabledOverride,
         setting.requireApprovalOverride,
-        setting.updatedAt);
+        setting.updatedAt,
+        setting.version);
   }
 
   private static String safeBody(String body) {

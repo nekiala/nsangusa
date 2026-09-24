@@ -34,6 +34,10 @@ class EventReplayRequest {
   Instant completedAt;
   Instant failedFrom;
   Instant failedTo;
+  UUID confirmedRequestId;
+
+  @Column(nullable = false)
+  Instant nextReplayAt;
 
   @Column(nullable = false, columnDefinition = "text")
   String auditMetadata;
@@ -62,6 +66,7 @@ class EventReplayRequest {
     this.auditMetadata = auditMetadata;
     this.status = dryRun ? "dry_run_complete" : "pending";
     this.requestedAt = Instant.now();
+    this.nextReplayAt = this.requestedAt;
     this.completedAt = dryRun ? this.requestedAt : null;
   }
 }

@@ -5,7 +5,7 @@ on:
     inputs:
       environment:
         type: choice
-        options: [staging, production]
+        options: [test, staging, production]
         required: true
       backendDigest:
         description: Backend image digest (sha256:...)
@@ -17,7 +17,7 @@ on:
         description: Pre-verified OpenTelemetry Collector image digest (sha256:...)
         required: true
       imageRef:
-        description: Auditable source tag, commit, or release reference
+        description: Signed release tag (v...) shared by both application images
         required: true
 
 permissions:
@@ -33,15 +33,14 @@ jobs:
     runs-on: ubuntu-24.04
     environment: ${{ inputs.environment }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4
         with:
-          version: v3.18.4
-      - uses: azure/setup-kubectl@v4
+          version: v4.2.4
+      - uses: azure/setup-kubectl@c0c8b32d33a5244f1e5947304550403b63930415 # v4
         with:
-          version: v1.30.14
-      - uses: sigstore/cosign-installer@v3.10.0
-      - uses: docker/login-action@v3
+          version: v1.36.4
+      - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -72,6 +71,7 @@ jobs:
           BACKEND_DIGEST: ${{ inputs.backendDigest }}
           FRONTEND_DIGEST: ${{ inputs.frontendDigest }}
           OTEL_COLLECTOR_DIGEST: ${{ inputs.otelCollectorDigest }}
+          RELEASE_TAG: ${{ inputs.imageRef }}
         run: |
           digest_pattern='^sha256:[0-9a-f]{64}$'
           [[ "$BACKEND_DIGEST" =~ $digest_pattern ]] || {
@@ -86,21 +86,75 @@ jobs:
             echo "otelCollectorDigest must be a sha256 image digest" >&2
             exit 1
           }
+          [[ "$RELEASE_TAG" =~ ^v[A-Za-z0-9._-]{1,127}$ ]] || {
+            echo "imageRef must be a bounded v-prefixed release tag" >&2
+            exit 1
+          }
       - name: Verify application image signatures
+        id: signatures
         env:
           BACKEND_DIGEST: ${{ inputs.backendDigest }}
           FRONTEND_DIGEST: ${{ inputs.frontendDigest }}
+          RELEASE_TAG: ${{ inputs.imageRef }}
         run: |
-          identity="^https://github.com/${GITHUB_REPOSITORY}/\\.github/workflows/images\\.yml@refs/tags/v.+$"
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/images.yml@refs/tags/${RELEASE_TAG}"
           issuer="https://token.actions.githubusercontent.com"
           cosign verify \
-            --certificate-identity-regexp "$identity" \
+            --certificate-identity "$identity" \
             --certificate-oidc-issuer "$issuer" \
-            "ghcr.io/${GITHUB_REPOSITORY}/backend@${BACKEND_DIGEST}"
+            -a "source-ref=refs/tags/$RELEASE_TAG" \
+            -a "quality-gate=passed" \
+            "ghcr.io/${GITHUB_REPOSITORY}/backend@${BACKEND_DIGEST}" \
+            > "$RUNNER_TEMP/backend-signature.json"
           cosign verify \
-            --certificate-identity-regexp "$identity" \
+            --certificate-identity "$identity" \
             --certificate-oidc-issuer "$issuer" \
-            "ghcr.io/${GITHUB_REPOSITORY}/frontend@${FRONTEND_DIGEST}"
+            -a "source-ref=refs/tags/$RELEASE_TAG" \
+            -a "quality-gate=passed" \
+            "ghcr.io/${GITHUB_REPOSITORY}/frontend@${FRONTEND_DIGEST}" \
+            > "$RUNNER_TEMP/frontend-signature.json"
+          backend_commit="$(jq -er '.[].optional["source-commit"]' "$RUNNER_TEMP/backend-signature.json" | sort -u)"
+          frontend_commit="$(jq -er '.[].optional["source-commit"]' "$RUNNER_TEMP/frontend-signature.json" | sort -u)"
+          [[ "$backend_commit" =~ ^[a-f0-9]{40}$ && "$backend_commit" = "$frontend_commit" ]] || {
+            echo "Application images must attest the same qualified source commit" >&2
+            exit 1
+          }
+          printf 'source-commit=%s\n' "$backend_commit" >> "$GITHUB_OUTPUT"
+      - name: Use the chart from the qualified source commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.signatures.outputs.source-commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.20.0
+      - name: Validate the public smoke target before deployment
+        env:
+          PUBLIC_SMOKE_URL: ${{ vars.PUBLIC_SMOKE_URL }}
+        run: node .github/scripts/deployment-smoke.mjs --validate-target
+      - name: Require reviewed qualification evidence
+        if: inputs.environment != 'test'
+        env:
+          QUALIFICATION_EVIDENCE_JSON: ${{ secrets.QUALIFICATION_EVIDENCE_JSON }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          QUALIFIED_SOURCE_COMMIT: ${{ steps.signatures.outputs.source-commit }}
+          BACKEND_DIGEST: ${{ inputs.backendDigest }}
+          FRONTEND_DIGEST: ${{ inputs.frontendDigest }}
+          OTEL_COLLECTOR_DIGEST: ${{ inputs.otelCollectorDigest }}
+        run: |
+          test -n "$QUALIFICATION_EVIDENCE_JSON" || {
+            echo "Reviewed QUALIFICATION_EVIDENCE_JSON is required; pending gates cannot be waived by deployment" >&2
+            exit 1
+          }
+          umask 077
+          printf '%s' "$QUALIFICATION_EVIDENCE_JSON" > "$RUNNER_TEMP/qualification.json"
+          node .github/scripts/qualification.mjs "$RUNNER_TEMP/qualification.json"
+      - name: Inspect actual hosted release protections
+        if: inputs.environment != 'test'
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          RELEASE_GOVERNANCE_TOKEN: ${{ secrets.RELEASE_GOVERNANCE_TOKEN }}
+        run: node .github/scripts/release-controls.mjs
       - name: Validate release render
         run: |
           helm lint infrastructure/helm/nsangusa \
@@ -118,10 +172,12 @@ jobs:
           kubectl create namespace "$TARGET_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
           kubectl label namespace "$TARGET_NAMESPACE" --overwrite \
             pod-security.kubernetes.io/enforce=restricted \
-            pod-security.kubernetes.io/enforce-version=v1.30 \
+            pod-security.kubernetes.io/enforce-version=v1.36 \
             pod-security.kubernetes.io/audit=restricted \
             pod-security.kubernetes.io/warn=restricted
       - name: Deploy with atomic rollback
+        env:
+          RELEASE_TAG: ${{ inputs.imageRef }}
         run: |
           helm upgrade --install nsangusa infrastructure/helm/nsangusa \
             --namespace nsangusa-${{ inputs.environment }} \
@@ -132,7 +188,7 @@ jobs:
             --set frontend.image.repository='ghcr.io/${{ github.repository }}/frontend' \
             --set frontend.image.digest='${{ inputs.frontendDigest }}' \
             --set otelCollector.image.digest='${{ inputs.otelCollectorDigest }}' \
-            --set-string global.podAnnotations.release\\.nsangusa\\.io/source-ref='${{ inputs.imageRef }}' \
+            --set-string "global.podAnnotations.release\\.nsangusa\\.io/source-ref=$RELEASE_TAG" \
             --atomic --timeout 10m
       - name: Record deployed release
         run: |
@@ -143,3 +199,12 @@ jobs:
           kubectl rollout status deployment \
             --selector=app.kubernetes.io/instance=nsangusa,app.kubernetes.io/component=frontend \
             --namespace nsangusa-${{ inputs.environment }} --timeout=5m
+      - name: Exercise the deployed public application
+        env:
+          PUBLIC_SMOKE_URL: ${{ vars.PUBLIC_SMOKE_URL }}
+        run: |
+          test -n "$PUBLIC_SMOKE_URL" || {
+            echo "PUBLIC_SMOKE_URL environment variable must identify the deployed HTTPS origin" >&2
+            exit 1
+          }
+          node .github/scripts/deployment-smoke.mjs

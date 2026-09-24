@@ -3,6 +3,7 @@ package com.nsangusa.news.sourceingestion.internal;
 import com.nsangusa.news.eventprocessing.DurableEventPublisher;
 import com.nsangusa.news.eventprocessing.IncomingEventReader;
 import com.nsangusa.news.eventprocessing.ProcessedEventRegistry;
+import com.nsangusa.news.eventprocessing.TerminalEventException;
 import com.nsangusa.news.integration.EventTopics;
 import com.nsangusa.news.integration.NewsEvents.XPostDiscovered;
 import com.nsangusa.news.integration.NewsEvents.XPostNormalized;
@@ -10,9 +11,7 @@ import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.springframework.kafka.annotation.BackOff;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,12 +37,6 @@ class SourceNormalizationConsumer {
   }
 
   @KafkaListener(topics = EventTopics.INGESTION, groupId = "source-normalizer-v1")
-  @RetryableTopic(
-      attempts = "4",
-      backOff = @BackOff(delay = 1000, multiplier = 5.0, maxDelay = 30000),
-      retryTopicSuffix = ".retry",
-      dltTopicSuffix = ".dlt",
-      autoCreateTopics = "true")
   @Transactional
   void consume(String json) {
     if (!"XPostDiscovered".equals(reader.eventType(json))) {
@@ -57,6 +50,10 @@ class SourceNormalizationConsumer {
         posts
             .findLockedById(event.aggregateId())
             .orElseThrow(() -> new IllegalStateException("Source missing"));
+    if (!post.monitoredAccountId.equals(event.payload().monitoredAccountId())
+        || !post.postId.equals(event.payload().postId())) {
+      throw new TerminalEventException("Discovered event does not identify the stored source");
+    }
     if (!"active".equals(post.status)) {
       processed.markProcessed(event.eventId(), "source-normalizer-v1");
       return;
@@ -106,7 +103,8 @@ class SourceNormalizationConsumer {
             post.canonicalUrl,
             normalized,
             post.publishedAt,
-            topics);
+            topics,
+            post.conversationId);
     events.enqueue(
         "XPostNormalized",
         post.id,

@@ -1,4 +1,4 @@
 @org.springframework.modulith.ApplicationModule(
     displayName = "Identity and Authorization",
-    allowedDependencies = {"audit"})
+    allowedDependencies = {"audit", "eventprocessing", "newsletter"})
 package com.nsangusa.news.identity;

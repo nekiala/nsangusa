@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import java.util.UUID;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,33 +36,27 @@ class NewsletterController {
         .body(newsletter.subscribe(request.email(), request.consentSource(), request.frequency()));
   }
 
-  @GetMapping("/confirm")
+  @PostMapping("/confirm")
   ResponseEntity<Void> confirm(@RequestParam UUID id, @RequestParam @NotBlank String token) {
     newsletter.confirm(id, token);
-    return ResponseEntity.noContent().build();
+    return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
   }
 
   @PostMapping("/unsubscribe")
   ResponseEntity<Void> unsubscribe(@RequestParam UUID id, @RequestParam @NotBlank String token) {
     newsletter.unsubscribe(id, token);
-    return ResponseEntity.noContent().build();
-  }
-
-  @PostMapping("/preferences")
-  ResponseEntity<Void> preferences(
-      @RequestParam UUID id,
-      @RequestParam @NotBlank String token,
-      @Valid @RequestBody PreferenceRequest request) {
-    newsletter.updatePreferences(id, token, request.frequency());
-    return ResponseEntity.noContent().build();
+    return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
   }
 
   @PostMapping("/provider-webhooks/{provider}")
   ResponseEntity<Void> webhook(
       @PathVariable String provider,
-      @RequestHeader("X-Webhook-Signature") String signature,
+      @RequestHeader(value = "svix-id", required = false) String svixId,
+      @RequestHeader(value = "svix-timestamp", required = false) String svixTimestamp,
+      @RequestHeader(value = "svix-signature", required = false) String svixSignature,
+      @RequestHeader(value = "X-Webhook-Signature", required = false) String legacySignature,
       @RequestBody String body) {
-    webhooks.process(provider, signature, body);
+    webhooks.process(provider, svixId, svixTimestamp, svixSignature, legacySignature, body);
     return ResponseEntity.noContent().build();
   }
 
@@ -74,8 +69,6 @@ class NewsletterController {
 
   record SubscriptionRequest(
       @Email @NotBlank String email,
-      @NotBlank String consentSource,
-      @Pattern(regexp = "immediate|daily|weekly|all") String frequency) {}
-
-  record PreferenceRequest(@Pattern(regexp = "immediate|daily|weekly|all") String frequency) {}
+      @NotBlank @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}") String consentSource,
+      @NotBlank @Pattern(regexp = "immediate|daily|weekly|all") String frequency) {}
 }

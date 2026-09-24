@@ -48,6 +48,9 @@
             "publishedAt": {
               "type": "string",
               "format": "date-time"
+            },
+            "conversationId": {
+              "type": ["string", "null"]
             }
           }
         }
@@ -55,4 +58,3 @@
     }
   ]
 }
-

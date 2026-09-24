@@ -18,7 +18,15 @@ helm lint helm/nsangusa \
   --set otelCollector.image.digest=sha256:...
 ```
 
-Compose is local-only. The chart never deploys PostgreSQL, Kafka, Redis, S3, or other production stateful services. It deploys backend/frontend workloads, a pre-upgrade Flyway job, and optionally an OpenTelemetry Collector. Production rendering fails unless immutable SHA-256 image digests, a runtime Secret reference, TLS ingress, secure external endpoints, and production transport settings are supplied.
+Compose is local-only. The chart never deploys PostgreSQL, Kafka, Redis, S3, or other production stateful services. It deploys backend/frontend workloads, a pre-upgrade Flyway job, and optionally an OpenTelemetry Collector. Test, staging, and production rendering fail unless their required runtime Secret reference, TLS
+ingress, secure external endpoints, and transport settings are supplied. Production additionally
+requires immutable SHA-256 image digests and production provider mode.
+
+The backend ConfigMap exposes bounded story clustering, X reconciliation, AI retry/circuit/price,
+and publication policy settings. Production must retain `PUBLICATION_POLICY=HUMAN_REVIEW_ALWAYS`;
+confidence/topic modes are for controlled qualification environments only. Production also requires
+`NEWSLETTER_PROVIDER=resend`; `NEWSLETTER_IDEMPOTENCY_WINDOW` must not exceed Resend's documented
+24-hour provider-side idempotency window.
 
 `environment-values.yaml` is environment-owned and must not be committed. Start from `helm/nsangusa/values/environment.example.yaml`, replace every documentation address, then store it in the protected GitHub environment's `HELM_VALUES` secret. It supplies public endpoints, ingress host/TLS secret, managed-service addresses, image repositories, and explicit egress CIDRs/ports. Credentials remain in `secret.existingSecret`, ideally synchronized by an external secret controller or provided through workload identity.
 

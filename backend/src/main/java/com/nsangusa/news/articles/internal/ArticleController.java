@@ -4,9 +4,14 @@ import com.nsangusa.news.articles.ArticleService;
 import com.nsangusa.news.articles.ArticleService.ArticleView;
 import com.nsangusa.news.articles.ArticleService.ManualArticleCommand;
 import com.nsangusa.news.articles.ArticleService.SourceView;
+import com.nsangusa.news.articles.ArticleState;
+import com.nsangusa.news.media.MediaService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.security.Principal;
 import java.util.List;
@@ -27,23 +32,72 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 class ArticleController {
   private final ArticleService articles;
+  private final MediaService media;
+  private final com.nsangusa.news.eventprocessing.DurableCommandExecutor commands;
 
-  ArticleController(ArticleService articles) {
+  ArticleController(
+      ArticleService articles,
+      MediaService media,
+      com.nsangusa.news.eventprocessing.DurableCommandExecutor commands) {
     this.articles = articles;
+    this.media = media;
+    this.commands = commands;
   }
 
   @GetMapping("/articles")
   ResponseEntity<List<ArticleView>> latest(@RequestParam(defaultValue = "20") int limit) {
     return ResponseEntity.ok()
-        .cacheControl(CacheControl.maxAge(java.time.Duration.ofSeconds(30)).cachePublic())
+        .cacheControl(CacheControl.noStore())
         .body(articles.latestPublished(limit));
   }
 
   @GetMapping("/articles/{slug}")
   ResponseEntity<ArticleView> article(@PathVariable String slug) {
     return ResponseEntity.ok()
-        .cacheControl(CacheControl.maxAge(java.time.Duration.ofMinutes(2)).cachePublic())
+        .cacheControl(CacheControl.noStore())
         .body(articles.getPublishedBySlug(slug));
+  }
+
+  @GetMapping("/articles/discovery")
+  ResponseEntity<ArticleService.PublicArticlePage> published(
+      @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(articles.published(page, size));
+  }
+
+  @GetMapping("/articles/{slug}/related")
+  ResponseEntity<List<ArticleService.ArticleSummary>> related(
+      @PathVariable String slug, @RequestParam(defaultValue = "3") int limit) {
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(articles.related(slug, limit));
+  }
+
+  @GetMapping("/articles/{slug}/image")
+  ResponseEntity<byte[]> image(
+      @PathVariable String slug, @RequestParam(defaultValue = "hero") String variant) {
+    var article = articles.getPublishedBySlug(slug);
+    if (article.heroObjectKey() == null) {
+      throw new org.springframework.web.server.ResponseStatusException(
+          org.springframework.http.HttpStatus.NOT_FOUND, "Article has no approved image");
+    }
+    var image = media.image(article.heroObjectKey(), variant);
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .contentType(org.springframework.http.MediaType.parseMediaType(image.contentType()))
+        .body(image.bytes());
+  }
+
+  @GetMapping("/admin/articles")
+  @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
+  ResponseEntity<ArticleService.ArticlePage> list(
+      @RequestParam(required = false) ArticleState state,
+      @RequestParam(defaultValue = "0") @Min(0) int page,
+      @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(articles.list(state, page, size));
   }
 
   @GetMapping("/admin/articles/{id}")
@@ -55,8 +109,20 @@ class ArticleController {
   @PostMapping("/admin/articles")
   @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
   ResponseEntity<IdResponse> create(
-      @Valid @RequestBody ArticleCommandRequest request, Principal principal) {
-    UUID id = articles.createManual(request.toCommand(), actorId(principal));
+      @Valid @RequestBody ArticleCommandRequest request,
+      Principal principal,
+      @org.springframework.web.bind.annotation.RequestHeader(
+              value = "Idempotency-Key",
+              required = false)
+          String key) {
+    UUID id =
+        UUID.fromString(
+            commands.execute(
+                actorId(principal),
+                key,
+                "article-create",
+                request,
+                () -> articles.createManual(request.toCommand(), actorId(principal)).toString()));
     return ResponseEntity.created(java.net.URI.create("/api/v1/admin/articles/" + id))
         .body(new IdResponse(id));
   }
@@ -67,53 +133,250 @@ class ArticleController {
       @PathVariable UUID id,
       @Valid @RequestBody ArticleCommandRequest request,
       @RequestParam long expectedVersion,
-      Principal principal) {
-    articles.edit(id, expectedVersion, request.toCommand(), actorId(principal));
+      Principal principal,
+      @org.springframework.web.bind.annotation.RequestHeader(
+              value = "Idempotency-Key",
+              required = false)
+          String key) {
+    commands.execute(
+        actorId(principal),
+        key,
+        "article-edit:" + id,
+        java.util.Map.of("expectedVersion", expectedVersion, "article", request),
+        () -> {
+          articles.edit(id, expectedVersion, request.toCommand(), actorId(principal));
+          return null;
+        });
     return ResponseEntity.noContent().build();
   }
 
   @PostMapping("/admin/articles/{id}/approve")
   @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
-  ResponseEntity<Void> approve(@PathVariable UUID id, Principal principal) {
-    articles.approve(id, actorId(principal));
+  ResponseEntity<Void> approve(
+      @PathVariable UUID id,
+      Principal principal,
+      @RequestParam(required = false) Long expectedVersion,
+      @org.springframework.web.bind.annotation.RequestHeader(
+              value = "Idempotency-Key",
+              required = false)
+          String key) {
+    mutate(
+        id,
+        "approve",
+        key,
+        expectedVersion,
+        principal,
+        () -> articles.approve(id, actorId(principal)));
     return ResponseEntity.accepted().build();
+  }
+
+  @PostMapping("/admin/articles/{articleId}/images/fallback")
+  @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
+  ResponseEntity<EventResponse> fallbackImage(
+      @PathVariable UUID articleId,
+      @Valid @RequestBody FallbackImageRequest request,
+      Principal principal,
+      @org.springframework.web.bind.annotation.RequestHeader("Idempotency-Key") String key) {
+    UUID actor = actorId(principal);
+    String eventId =
+        commands.execute(
+            actor,
+            key,
+            "article-image-fallback:" + articleId,
+            request,
+            () -> {
+              var article = articles.getLocked(articleId);
+              if (article.version() != request.expectedVersion()) {
+                throw new org.springframework.dao.OptimisticLockingFailureException(
+                    "Article version does not match");
+              }
+              if (!Set.of(
+                      ArticleState.DRAFTING, ArticleState.AWAITING_REVIEW, ArticleState.APPROVED)
+                  .contains(article.state())) {
+                throw new IllegalStateException(
+                    "Only an editable draft can request a fallback image");
+              }
+              return media
+                  .requestFallback(articleId, request.altText(), request.reason(), actor)
+                  .toString();
+            });
+    return ResponseEntity.accepted().body(new EventResponse(UUID.fromString(eventId)));
   }
 
   @PostMapping("/admin/articles/{id}/publish")
   @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
-  ResponseEntity<Void> publish(@PathVariable UUID id, Principal principal) {
+  ResponseEntity<Void> publish(
+      @PathVariable UUID id,
+      Principal principal,
+      @RequestParam(required = false) Long expectedVersion,
+      @org.springframework.web.bind.annotation.RequestHeader(
+              value = "Idempotency-Key",
+              required = false)
+          String key) {
     UUID actor = actorId(principal);
-    articles.publish(id, actor, id, null);
+    mutate(
+        id,
+        "publish",
+        key,
+        expectedVersion,
+        principal,
+        () -> articles.publish(id, actor, id, null));
     return ResponseEntity.noContent().build();
   }
 
   @PostMapping("/admin/articles/{id}/reject")
   @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
-  ResponseEntity<Void> reject(@PathVariable UUID id, Principal principal) {
-    articles.reject(id, actorId(principal));
+  ResponseEntity<Void> reject(
+      @PathVariable UUID id,
+      Principal principal,
+      @RequestParam(required = false) Long expectedVersion,
+      @org.springframework.web.bind.annotation.RequestHeader(
+              value = "Idempotency-Key",
+              required = false)
+          String key) {
+    mutate(
+        id,
+        "reject",
+        key,
+        expectedVersion,
+        principal,
+        () -> articles.reject(id, actorId(principal)));
     return ResponseEntity.noContent().build();
   }
 
   @PostMapping("/admin/articles/{id}/unpublish")
   @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
-  ResponseEntity<Void> unpublish(@PathVariable UUID id, Principal principal) {
-    articles.unpublish(id, actorId(principal));
+  ResponseEntity<Void> unpublish(
+      @PathVariable UUID id,
+      Principal principal,
+      @RequestParam(required = false) Long expectedVersion,
+      @org.springframework.web.bind.annotation.RequestHeader(
+              value = "Idempotency-Key",
+              required = false)
+          String key) {
+    mutate(
+        id,
+        "unpublish",
+        key,
+        expectedVersion,
+        principal,
+        () -> articles.unpublish(id, actorId(principal)));
     return ResponseEntity.noContent().build();
   }
 
   @PostMapping("/admin/articles/{id}/restore")
   @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
-  ResponseEntity<Void> restore(@PathVariable UUID id, Principal principal) {
-    articles.restore(id, actorId(principal));
+  ResponseEntity<Void> restore(
+      @PathVariable UUID id,
+      Principal principal,
+      @RequestParam(required = false) Long expectedVersion,
+      @org.springframework.web.bind.annotation.RequestHeader(
+              value = "Idempotency-Key",
+              required = false)
+          String key) {
+    mutate(
+        id,
+        "restore",
+        key,
+        expectedVersion,
+        principal,
+        () -> articles.restore(id, actorId(principal)));
     return ResponseEntity.noContent().build();
   }
 
   @PostMapping("/admin/articles/{id}/archive")
   @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
-  ResponseEntity<Void> archive(@PathVariable UUID id, Principal principal) {
-    articles.archive(id, actorId(principal));
+  ResponseEntity<Void> archive(
+      @PathVariable UUID id,
+      Principal principal,
+      @RequestParam(required = false) Long expectedVersion,
+      @org.springframework.web.bind.annotation.RequestHeader(
+              value = "Idempotency-Key",
+              required = false)
+          String key) {
+    mutate(
+        id,
+        "archive",
+        key,
+        expectedVersion,
+        principal,
+        () -> articles.archive(id, actorId(principal)));
     return ResponseEntity.noContent().build();
   }
+
+  @GetMapping("/admin/articles/{id}/revisions")
+  @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
+  ResponseEntity<ArticleService.RevisionPage> revisions(
+      @PathVariable UUID id,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "20") int size) {
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(articles.revisions(id, page, size));
+  }
+
+  @GetMapping("/admin/articles/{id}/revisions/compare")
+  @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
+  ResponseEntity<ArticleService.RevisionComparison> compare(
+      @PathVariable UUID id, @RequestParam int from, @RequestParam int to) {
+    return ResponseEntity.ok()
+        .cacheControl(CacheControl.noStore())
+        .body(articles.compareRevisions(id, from, to));
+  }
+
+  @PostMapping("/admin/articles/{id}/corrections")
+  @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
+  ResponseEntity<Void> correction(
+      @PathVariable UUID id,
+      @Valid @RequestBody CorrectionRequest request,
+      Principal principal,
+      @org.springframework.web.bind.annotation.RequestHeader(
+              value = "Idempotency-Key",
+              required = false)
+          String key) {
+    commands.execute(
+        actorId(principal),
+        key,
+        "article-correction:" + id,
+        request,
+        () -> {
+          articles.startCorrection(
+              id, request.expectedVersion(), request.note(), actorId(principal));
+          return null;
+        });
+    return ResponseEntity.noContent().build();
+  }
+
+  private void mutate(
+      UUID id,
+      String operation,
+      String key,
+      Long expectedVersion,
+      Principal principal,
+      Runnable action) {
+    commands.execute(
+        actorId(principal),
+        key,
+        "article-" + operation + ":" + id,
+        java.util.Collections.singletonMap("expectedVersion", expectedVersion),
+        () -> {
+          if (expectedVersion != null && articles.getLocked(id).version() != expectedVersion) {
+            throw new org.springframework.dao.OptimisticLockingFailureException(
+                "Article version does not match");
+          }
+          action.run();
+          return null;
+        });
+  }
+
+  record CorrectionRequest(@Min(0) long expectedVersion, @NotBlank @Size(max = 2000) String note) {}
+
+  record FallbackImageRequest(
+      @NotBlank @Size(max = 500) String altText,
+      @NotBlank @Size(max = 2000) String reason,
+      @NotNull @Min(0) Long expectedVersion) {}
+
+  record EventResponse(UUID eventId) {}
 
   private static UUID actorId(Principal principal) {
     return UUID.nameUUIDFromBytes(
@@ -123,15 +386,48 @@ class ArticleController {
   record ArticleCommandRequest(
       @NotBlank @Size(max = 300) String headline,
       @NotBlank @Size(max = 2_000) String summary,
-      @NotBlank @Size(max = 100_000) String body,
+      @Size(max = 100_000) String body,
       @Size(max = 20_000) String editorialContext,
       @NotBlank @Size(max = 300) String seoTitle,
       @NotBlank @Size(max = 500) String seoDescription,
       @NotBlank @Size(max = 250) String slugSuggestion,
       @NotBlank @Size(max = 100) String topic,
       @NotEmpty Set<@NotBlank String> tags,
-      @NotEmpty List<SourceView> sources,
-      boolean commentsEnabled) {
+      @NotEmpty @Size(max = 50) List<@NotNull @Valid SourceView> sources,
+      boolean commentsEnabled,
+      @Valid com.nsangusa.news.articles.ArticleContent content) {
+    ArticleCommandRequest(
+        String headline,
+        String summary,
+        String body,
+        String editorialContext,
+        String seoTitle,
+        String seoDescription,
+        String slugSuggestion,
+        String topic,
+        Set<String> tags,
+        List<SourceView> sources,
+        boolean commentsEnabled) {
+      this(
+          headline,
+          summary,
+          body,
+          editorialContext,
+          seoTitle,
+          seoDescription,
+          slugSuggestion,
+          topic,
+          tags,
+          sources,
+          commentsEnabled,
+          null);
+    }
+
+    @jakarta.validation.constraints.AssertTrue(message = "Supply content or a nonblank body") @com.fasterxml.jackson.annotation.JsonIgnore
+    public boolean isContentPresent() {
+      return content != null || (body != null && !body.isBlank());
+    }
+
     ManualArticleCommand toCommand() {
       return new ManualArticleCommand(
           headline,
@@ -144,7 +440,8 @@ class ArticleController {
           topic,
           tags,
           sources,
-          commentsEnabled);
+          commentsEnabled,
+          content);
     }
   }
 

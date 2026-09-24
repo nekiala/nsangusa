@@ -19,6 +19,12 @@ test("mobile navigation and comments retain accessible controls", async ({ page 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/articles/the-work-of-paying-attention");
   await expect(page.getByRole("navigation", { name: "Primary navigation" })).toBeVisible();
+  await expect(page.getByText("to comment or report abuse.", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("Add a comment")).toHaveCount(0);
+  await page.goto("/sign-in?next=%2Farticles%2Fthe-work-of-paying-attention");
+  await page.getByRole("region", { name: "Welcome back" }).getByLabel("Email address").fill("reader@example.test");
+  await page.getByLabel("Password", { exact: true }).fill("reader-demo-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByLabel("Add a comment")).toBeVisible();
   await expect(page.getByRole("button", { name: "Submit for moderation" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -56,6 +62,13 @@ test("metadata feeds and private pages send production-safe responses", async ({
   expect(admin.headers()["cache-control"]).toContain("no-store");
   const rss = await request.get("/rss.xml");
   expect(rss.headers()["content-type"]).toContain("application/rss+xml");
-  expect(rss.headers()["cache-control"]).toContain("s-maxage=3600");
+  expect(rss.headers()["cache-control"]).toContain("no-store");
   expect(await rss.text()).toContain("<title>The work of paying attention</title>");
+  const sitemap = await request.get("/sitemap.xml");
+  expect(sitemap.headers()["cache-control"]).toContain("no-store");
+  const article = await request.get("/articles/the-work-of-paying-attention");
+  expect(article.headers()["cache-control"]).toContain("no-store");
+  const missing = await request.get("/articles/does-not-exist");
+  expect(missing.status()).toBe(404);
+  expect(missing.headers()["cache-control"]).toContain("no-store");
 });

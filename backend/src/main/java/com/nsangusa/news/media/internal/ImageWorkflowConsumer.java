@@ -4,19 +4,18 @@ import com.nsangusa.news.eventprocessing.DurableEventPublisher;
 import com.nsangusa.news.eventprocessing.IncomingEventReader;
 import com.nsangusa.news.eventprocessing.ProcessedEventRegistry;
 import com.nsangusa.news.integration.EventTopics;
-import com.nsangusa.news.integration.NewsEvents.ArticleImageGenerated;
+import com.nsangusa.news.integration.NewsEvents.ArticleImageCandidateGenerated;
 import com.nsangusa.news.integration.NewsEvents.ArticleImageRequested;
 import com.nsangusa.news.media.ImageGenerationProvider;
 import com.nsangusa.news.media.ObjectStorage;
 import java.time.Instant;
+import java.util.UUID;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
 class ImageWorkflowConsumer {
-  private static final org.slf4j.Logger log =
-      org.slf4j.LoggerFactory.getLogger(ImageWorkflowConsumer.class);
   private final IncomingEventReader reader;
   private final ProcessedEventRegistry processed;
   private final DurableEventPublisher events;
@@ -56,22 +55,13 @@ class ImageWorkflowConsumer {
       return;
     }
     validatePrompt(event.payload().prompt());
-    ImageGenerationProvider.GeneratedImage image;
-    try {
-      image = provider.generate(event.payload().prompt(), event.payload().altText());
-    } catch (RuntimeException exception) {
-      log.warn(
-          "Image provider failed for article {}; using disclosed fallback",
-          event.payload().articleId(),
-          exception);
-      image =
-          new FakeImageGenerationProvider()
-              .generate(
-                  "Fallback abstract editorial illustration",
-                  event.payload().altText() + " (fallback image)");
-    }
+    ImageGenerationProvider.GeneratedImage image =
+        provider.generate(event.payload().prompt(), event.payload().altText());
+    UUID generationId = UUID.randomUUID();
     String heroKey = null;
-    for (var variant : variants.variants(image.bytes(), image.contentType())) {
+    var generatedVariants = variants.variants(image.bytes(), image.contentType());
+    var storedAssets = new java.util.ArrayList<MediaAsset>();
+    for (var variant : generatedVariants) {
       String extension = "image/svg+xml".equals(variant.contentType()) ? ".svg" : ".png";
       String key =
           "articles/"
@@ -82,34 +72,45 @@ class ImageWorkflowConsumer {
               + event.eventId()
               + extension;
       storage.put(key, variant.bytes(), variant.contentType());
-      assets.save(
+      storedAssets.add(
           new MediaAsset(
               event.payload().articleId(),
+              generationId,
+              variant.name(),
               key,
               variant.contentType(),
               variant.width(),
               variant.height(),
-              sha256(variant.bytes())));
+              StoredImages.sha256(variant.bytes())));
       if ("hero".equals(variant.name())) {
         heroKey = key;
       }
     }
-    generations.save(
+    var generation =
         new ImageGeneration(
+            generationId,
             event.payload().articleId(),
             event.payload().prompt(),
             image.altText(),
             java.util.Objects.requireNonNull(heroKey),
             image.provider(),
-            image.model()));
+            image.model());
+    generation.renderedPrompt =
+        image.renderedPrompt() == null ? event.payload().prompt() : image.renderedPrompt();
+    generation.promptVersion =
+        image.promptVersion() == null ? "editorial-illustration-v1" : image.promptVersion();
+    generation.providerRequestId = image.providerRequestId();
+    generations.save(generation);
+    assets.saveAll(storedAssets);
     events.enqueue(
-        "ArticleImageGenerated",
+        "ArticleImageCandidateGenerated",
         event.payload().articleId(),
         event.correlationId(),
         event.eventId(),
-        "article-image-generated:" + event.payload().articleId(),
-        new ArticleImageGenerated(
+        "article-image-candidate-generated:" + event.eventId(),
+        new ArticleImageCandidateGenerated(
             event.payload().articleId(),
+            generationId,
             heroKey,
             image.altText(),
             image.provider(),
@@ -118,22 +119,16 @@ class ImageWorkflowConsumer {
     processed.markProcessed(event.eventId(), "image-generation-v1");
   }
 
-  private static void validatePrompt(String prompt) {
+  static void validatePrompt(String prompt) {
+    if (prompt == null || prompt.isBlank() || prompt.length() > 4_000) {
+      throw new IllegalArgumentException("Image prompt must contain between 1 and 4000 characters");
+    }
     String lower = prompt.toLowerCase(java.util.Locale.ROOT);
     if (lower.contains("fabricated screenshot")
         || lower.contains("add a real logo")
         || lower.contains("impersonate")
         || lower.contains("identifiable private person")) {
       throw new IllegalArgumentException("Image prompt violates editorial image policy");
-    }
-  }
-
-  private static String sha256(byte[] bytes) {
-    try {
-      return java.util.HexFormat.of()
-          .formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
-    } catch (java.security.NoSuchAlgorithmException exception) {
-      throw new IllegalStateException(exception);
     }
   }
 }

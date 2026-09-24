@@ -17,13 +17,28 @@ import org.junit.jupiter.api.Test;
 class ArticleStateTransitionTests {
   @Test
   void requiresImageReviewAndApprovalBeforePublication() {
-    var article = Article.fromDraft(UUID.randomUUID(), draft(true));
+    var generated = draft(true);
+    var article = Article.fromDraft(UUID.randomUUID(), generated);
 
     assertThat(article.state).isEqualTo(ArticleState.DRAFTING);
+    assertThat(article.storyCandidateId).isEqualTo(generated.storyCandidateId());
+    assertThat(article.revisions.getFirst().aiGenerationResult).isEqualTo(generated);
+    assertThat(article.content.blocks())
+        .singleElement()
+        .satisfies(
+            block -> {
+              assertThat(block.type()).isEqualTo("paragraph");
+              assertThat(block.text()).isEqualTo(generated.body());
+            });
+    assertThat(article.revisions.getFirst().snapshot.content()).isEqualTo(article.content);
     assertThatThrownBy(() -> article.publish(UUID.randomUUID()))
         .isInstanceOf(IllegalStateException.class);
 
-    article.imageReady("articles/test/hero.svg", "Safe illustration");
+    UUID generationId = UUID.randomUUID();
+    article.imageCandidateReady(generationId);
+    assertThat(article.state).isEqualTo(ArticleState.DRAFTING);
+    assertThat(article.imageApproved(generationId, "articles/test/hero.svg", "Safe illustration"))
+        .isTrue();
     assertThat(article.state).isEqualTo(ArticleState.AWAITING_REVIEW);
 
     article.approve(UUID.randomUUID());
@@ -38,6 +53,49 @@ class ArticleStateTransitionTests {
     assertThat(article.state).isEqualTo(ArticleState.PUBLISHED);
     assertThat(article.commentsEnabled).isFalse();
     assertThat(article.unpublishedAt).isNull();
+  }
+
+  @Test
+  void approvedFallbackProvenanceIsPreservedInTheArticleAndRevision() {
+    var article = Article.fromDraft(UUID.randomUUID(), draft(true));
+    UUID generationId = UUID.randomUUID();
+    article.imageCandidateReady(generationId);
+
+    assertThat(article.imageApproved(generationId, "articles/fallback/hero.png", "Neutral", false))
+        .isTrue();
+
+    assertThat(article.state).isEqualTo(ArticleState.AWAITING_REVIEW);
+    assertThat(article.generatedImage).isFalse();
+    assertThat(article.imageApprovalRequired).isFalse();
+    assertThat(article.revisions.getLast().snapshot.generatedImage()).isFalse();
+    assertThat(article.revisions.getLast().snapshot.approvedImageGenerationId())
+        .isEqualTo(generationId);
+  }
+
+  @Test
+  void regenerationDoesNotReplaceApprovedImageUntilExplicitApproval() {
+    var article = Article.fromDraft(UUID.randomUUID(), draft(true));
+    UUID originalGeneration = UUID.randomUUID();
+    article.imageCandidateReady(originalGeneration);
+    article.imageApproved(originalGeneration, "articles/original/hero.svg", "Original");
+    article.approve(UUID.randomUUID());
+
+    UUID replacementGeneration = UUID.randomUUID();
+    article.imageCandidateReady(replacementGeneration);
+
+    assertThat(article.heroObjectKey).isEqualTo("articles/original/hero.svg");
+    assertThat(article.approvedImageGenerationId).isEqualTo(originalGeneration);
+    assertThat(article.pendingImageGenerationId).isEqualTo(replacementGeneration);
+    assertThat(article.state).isEqualTo(ArticleState.APPROVED);
+
+    assertThat(
+            article.imageApproved(
+                replacementGeneration, "articles/replacement/hero.svg", "Replacement"))
+        .isFalse();
+    assertThat(article.heroObjectKey).isEqualTo("articles/replacement/hero.svg");
+    assertThat(article.approvedImageGenerationId).isEqualTo(replacementGeneration);
+    assertThat(article.pendingImageGenerationId).isNull();
+    assertThat(article.state).isEqualTo(ArticleState.APPROVED);
   }
 
   @Test
@@ -75,6 +133,37 @@ class ArticleStateTransitionTests {
     assertThatThrownBy(() -> Article.fromDraft(UUID.randomUUID(), draft(false)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("human review");
+  }
+
+  @Test
+  void editingAnAiDraftCannotBypassInitialImageApproval() {
+    UUID editorId = UUID.randomUUID();
+    var article = Article.fromDraft(UUID.randomUUID(), draft(true));
+    var command =
+        new com.nsangusa.news.articles.ArticleService.ManualArticleCommand(
+            "Edited headline",
+            "Edited summary",
+            "Edited body",
+            null,
+            "Edited SEO title",
+            "Edited SEO description",
+            "edited-headline",
+            "general",
+            Set.of("news"),
+            List.of(
+                new com.nsangusa.news.articles.ArticleService.SourceView(
+                    article.sources.getFirst().sourcePostId,
+                    "account",
+                    "post",
+                    "https://example.test/post",
+                    Instant.now())),
+            true);
+
+    article.edit(0, command, editorId);
+
+    assertThatThrownBy(() -> article.approve(editorId))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("image");
   }
 
   private ArticleDraftGenerated draft(boolean humanReview) {

@@ -10,8 +10,10 @@ import static org.mockito.Mockito.when;
 import com.nsangusa.news.articles.ArticleService;
 import com.nsangusa.news.articles.ArticleState;
 import com.nsangusa.news.audit.AuditService;
+import com.nsangusa.news.comments.CommentService;
 import com.nsangusa.news.comments.SpamDecisionSupport;
 import com.nsangusa.news.eventprocessing.DurableEventPublisher;
+import com.nsangusa.news.identity.IdentityService;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -24,10 +26,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.security.access.AccessDeniedException;
 
 @ExtendWith(MockitoExtension.class)
 class CommentApplicationServiceTests {
   @Mock ArticleService articles;
+  @Mock IdentityService identity;
   @Mock CommentRepository comments;
   @Mock ModerationActionRepository moderation;
   @Mock CommentReportRepository reports;
@@ -46,6 +51,7 @@ class CommentApplicationServiceTests {
     service =
         new CommentApplicationService(
             articles,
+            identity,
             comments,
             moderation,
             reports,
@@ -119,10 +125,10 @@ class CommentApplicationServiceTests {
     UUID authorId = UUID.randomUUID();
     var comment = comment(articleId, authorId, "Original", "approved");
     comment.createdAt = Instant.now().minus(16, ChronoUnit.MINUTES);
-    when(comments.findById(comment.id)).thenReturn(Optional.of(comment));
+    when(comments.findLockedById(comment.id)).thenReturn(Optional.of(comment));
     allowCommenting(articleId, authorId);
 
-    assertThatThrownBy(() -> service.edit(comment.id, authorId, "Changed"))
+    assertThatThrownBy(() -> service.edit(comment.id, authorId, "Changed", 0))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("window");
   }
@@ -132,9 +138,9 @@ class CommentApplicationServiceTests {
     UUID articleId = UUID.randomUUID();
     UUID authorId = UUID.randomUUID();
     var comment = comment(articleId, authorId, "Original", "approved");
-    when(comments.findById(comment.id)).thenReturn(Optional.of(comment));
+    when(comments.findLockedById(comment.id)).thenReturn(Optional.of(comment));
 
-    service.deleteByAuthor(comment.id, authorId);
+    service.deleteByAuthor(comment.id, authorId, 0);
 
     assertThat(comment.body).isEqualTo("[deleted]");
     assertThat(comment.state).isEqualTo("approved");
@@ -148,7 +154,8 @@ class CommentApplicationServiceTests {
     UUID authorId = UUID.randomUUID();
     UUID reporterId = UUID.randomUUID();
     var comment = comment(articleId, authorId, "Comment", "approved");
-    when(comments.findById(comment.id)).thenReturn(Optional.of(comment));
+    when(comments.findLockedById(comment.id)).thenReturn(Optional.of(comment));
+    when(articles.get(articleId)).thenReturn(article(articleId, true));
     when(reports.existsByCommentIdAndReporterId(comment.id, reporterId)).thenReturn(false);
     when(reports.save(any(CommentReport.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
@@ -167,16 +174,229 @@ class CommentApplicationServiceTests {
     var comment = comment(articleId, UUID.randomUUID(), "Comment", "pending");
     UUID moderatorId = UUID.randomUUID();
     var report = new CommentReport(comment.id, UUID.randomUUID(), "abuse", null);
-    when(comments.findById(comment.id)).thenReturn(Optional.of(comment));
+    when(comments.findLockedById(comment.id)).thenReturn(Optional.of(comment));
     when(reports.findByCommentIdAndStatus(comment.id, "open")).thenReturn(List.of(report));
 
-    service.moderate(comment.id, "rejected", "Policy violation", moderatorId);
+    service.moderate(comment.id, "rejected", "Policy violation", moderatorId, 0);
 
     var action = ArgumentCaptor.forClass(ModerationAction.class);
     verify(moderation).save(action.capture());
     assertThat(action.getValue().previousState).isEqualTo("pending");
     assertThat(action.getValue().action).isEqualTo("rejected");
     assertThat(report.status).isEqualTo("resolved");
+  }
+
+  @Test
+  void deniesEditingAndDeletingAnotherReadersComment() {
+    var comment = comment(UUID.randomUUID(), UUID.randomUUID(), "Original", "approved");
+    when(comments.findLockedById(comment.id)).thenReturn(Optional.of(comment));
+    assertThatThrownBy(() -> service.edit(comment.id, UUID.randomUUID(), "Changed", 0))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThatThrownBy(() -> service.deleteByAuthor(comment.id, UUID.randomUUID(), 0))
+        .isInstanceOf(AccessDeniedException.class);
+    assertThat(comment.body).isEqualTo("Original");
+  }
+
+  @Test
+  void editingWithinWindowReassessesApprovalAndAuditsWithoutStoringTextInAudit() {
+    var comment = comment(UUID.randomUUID(), UUID.randomUUID(), "Original", "approved");
+    when(comments.findLockedById(comment.id)).thenReturn(Optional.of(comment));
+    allowCommenting(comment.articleId, comment.authorId);
+    when(spam.assess("Changed"))
+        .thenReturn(new SpamDecisionSupport.SpamAssessment(0.7, List.of("link")));
+    service.edit(comment.id, comment.authorId, "Changed", 0);
+    assertThat(comment.state).isEqualTo("pending");
+    assertThat(comment.editedAt).isNotNull();
+    verify(audit)
+        .record(comment.authorId, "COMMENT_EDITED", "comment", comment.id, java.util.Map.of());
+  }
+
+  @Test
+  void rejectsStaleEditsAndModerationBeforeChangingState() {
+    var comment = comment(UUID.randomUUID(), UUID.randomUUID(), "Original", "approved");
+    comment.version = 5;
+    when(comments.findLockedById(comment.id)).thenReturn(Optional.of(comment));
+    assertThatThrownBy(() -> service.edit(comment.id, comment.authorId, "Changed", 4))
+        .isInstanceOf(OptimisticLockingFailureException.class);
+    assertThatThrownBy(() -> service.moderate(comment.id, "spam", "Spam", UUID.randomUUID(), 4))
+        .isInstanceOf(OptimisticLockingFailureException.class);
+    assertThat(comment.state).isEqualTo("approved");
+  }
+
+  @Test
+  void moderationRequiresReasonsIncludingApprovalAndCannotResurrectDeletedText() {
+    var comment = comment(UUID.randomUUID(), UUID.randomUUID(), "Original", "pending");
+    assertThatThrownBy(() -> service.moderate(comment.id, "approved", " ", UUID.randomUUID(), 0))
+        .isInstanceOf(IllegalArgumentException.class);
+    when(comments.findLockedById(comment.id)).thenReturn(Optional.of(comment));
+    service.moderate(comment.id, "deleted", "Personal data", UUID.randomUUID(), 0);
+    assertThat(comment.deletedAt).isNotNull();
+    assertThat(comment.body).isEqualTo("[deleted by moderator]");
+    assertThatThrownBy(
+            () -> service.moderate(comment.id, "approved", "Restore", UUID.randomUUID(), 0))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void disabledGlobalPolicyOverridesEnabledArticleAndHidesDiscussion() {
+    UUID articleId = UUID.randomUUID();
+    when(articles.get(articleId)).thenReturn(article(articleId, true));
+    when(settings.findById(1))
+        .thenReturn(Optional.of(new CommentGlobalSettings(false, false, 15, .55, .9, 3)));
+    var local = new ArticleCommentSettings(articleId);
+    local.enabledOverride = true;
+    when(articleSettings.findById(articleId)).thenReturn(Optional.of(local));
+    assertThat(service.discussion(articleId, null, false).enabled()).isFalse();
+    assertThatThrownBy(() -> service.submit(articleId, UUID.randomUUID(), "Hello", null))
+        .isInstanceOf(IllegalStateException.class);
+    verify(comments, never()).save(any());
+  }
+
+  @Test
+  void unpublishedArticleNeverAcceptsOrExposesComments() {
+    UUID articleId = UUID.randomUUID();
+    var published = article(articleId, true);
+    var unpublished =
+        new ArticleService.ArticleView(
+            published.id(),
+            published.slug(),
+            published.headline(),
+            published.summary(),
+            published.body(),
+            null,
+            published.topic(),
+            published.tags(),
+            ArticleState.UNPUBLISHED,
+            null,
+            null,
+            false,
+            true,
+            published.publishedAt(),
+            Instant.now(),
+            1,
+            List.of(),
+            List.of(),
+            .9);
+    when(articles.get(articleId)).thenReturn(unpublished);
+    assertThat(service.approvedForArticle(articleId)).isEmpty();
+    assertThat(service.discussion(articleId, UUID.randomUUID(), true).canComment()).isFalse();
+    assertThatThrownBy(() -> service.submit(articleId, UUID.randomUUID(), "Hello", null))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
+  void onlyVisibleTopLevelParentsCanReceiveReplies() {
+    UUID articleId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    allowCommenting(articleId, authorId);
+    var parent = comment(articleId, UUID.randomUUID(), "Parent", "approved");
+    when(comments.findLockedById(parent.id)).thenReturn(Optional.of(parent));
+    when(spam.assess("Reply")).thenReturn(new SpamDecisionSupport.SpamAssessment(0, List.of()));
+    when(comments.save(any())).thenAnswer(call -> call.getArgument(0));
+    service.submit(articleId, authorId, "Reply", parent.id);
+    var captured = ArgumentCaptor.forClass(Comment.class);
+    verify(comments).save(captured.capture());
+    assertThat(captured.getValue().parentId).isEqualTo(parent.id);
+    parent.parentId = UUID.randomUUID();
+    assertThatThrownBy(() -> service.submit(articleId, authorId, "Reply", parent.id))
+        .isInstanceOf(IllegalArgumentException.class);
+    parent.parentId = null;
+    parent.state = "pending";
+    assertThatThrownBy(() -> service.submit(articleId, authorId, "Reply", parent.id))
+        .isInstanceOf(IllegalArgumentException.class);
+    parent.state = "approved";
+    parent.deletedAt = Instant.now();
+    assertThatThrownBy(() -> service.submit(articleId, authorId, "Reply", parent.id))
+        .isInstanceOf(IllegalArgumentException.class);
+    parent.deletedAt = null;
+    parent.articleId = UUID.randomUUID();
+    assertThatThrownBy(() -> service.submit(articleId, authorId, "Reply", parent.id))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void moderatedParentHidesRepliesButDeletedParentPreservesTombstone() {
+    UUID articleId = UUID.randomUUID();
+    when(articles.get(articleId)).thenReturn(article(articleId, true));
+    var parent = comment(articleId, UUID.randomUUID(), "Parent", "pending");
+    var reply = new Comment(articleId, UUID.randomUUID(), "Reply", parent.id, "approved", 0, null);
+    when(comments.findByArticleIdAndStateOrderByCreatedAt(articleId, "approved"))
+        .thenReturn(List.of(reply));
+    when(comments.findById(parent.id)).thenReturn(Optional.of(parent));
+    assertThat(service.approvedForArticle(articleId)).isEmpty();
+    parent.state = "deleted";
+    parent.deletedAt = Instant.now();
+    parent.body = "[deleted by moderator]";
+    var visible = service.approvedForArticle(articleId);
+    assertThat(visible).hasSize(2);
+    assertThat(visible.getFirst().deleted()).isTrue();
+    assertThat(visible.getLast().parentId()).isEqualTo(parent.id);
+  }
+
+  @Test
+  void discussionIncludesOnlyViewersPrivateCommentsAndEffectivePrivilege() {
+    UUID articleId = UUID.randomUUID();
+    UUID authorId = UUID.randomUUID();
+    when(articles.get(articleId)).thenReturn(article(articleId, true));
+    var own = comment(articleId, authorId, "Awaiting approval", "pending");
+    when(comments.findByArticleIdAndAuthorIdOrderByCreatedAt(articleId, authorId))
+        .thenReturn(List.of(own));
+    var privilege = new CommentingPrivilege(authorId);
+    privilege.suspend(null, "Repeated abuse", UUID.randomUUID());
+    when(privileges.findById(authorId)).thenReturn(Optional.of(privilege));
+    var discussion = service.discussion(articleId, authorId, true);
+    assertThat(discussion.comments())
+        .extracting(CommentService.CommentView::id)
+        .containsExactly(own.id);
+    assertThat(discussion.canComment()).isFalse();
+    assertThat(discussion.privilegeStatus()).isEqualTo("suspended");
+  }
+
+  @Test
+  void privilegeExpirationAndRestorationAreVersionedAndAudited() {
+    UUID userId = UUID.randomUUID();
+    UUID actor = UUID.randomUUID();
+    var privilege = new CommentingPrivilege(userId);
+    privilege.suspend(Instant.now().minusSeconds(10), "Expired", actor);
+    when(privileges.findById(userId)).thenReturn(Optional.of(privilege));
+    assertThat(service.privilege(userId).status()).isEqualTo("allowed");
+    service.suspend(userId, null, "Repeated abuse", actor, 0);
+    assertThat(service.privilege(userId).status()).isEqualTo("suspended");
+    assertThatThrownBy(() -> service.restorePrivilege(userId, "Restored", actor, 4))
+        .isInstanceOf(OptimisticLockingFailureException.class);
+    service.restorePrivilege(userId, "Appeal upheld", actor, 0);
+    assertThat(service.privilege(userId).status()).isEqualTo("allowed");
+    verify(privilegeRecords, org.mockito.Mockito.times(2)).save(any());
+  }
+
+  @Test
+  void stalePolicyAndUnboundedQueueRequestsAreRejected() {
+    when(settings.findById(1)).thenReturn(Optional.empty());
+    assertThat(service.globalSettings().version()).isEqualTo(-1);
+    var command = new CommentService.GlobalSettingsCommand(true, true, 10, .5, .9, 3);
+    assertThatThrownBy(() -> service.updateGlobalSettings(command, UUID.randomUUID(), 0))
+        .isInstanceOf(OptimisticLockingFailureException.class);
+    assertThatThrownBy(() -> service.moderationPage("pending", null, -1, 20))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> service.moderationPage("pending", null, 0, 101))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> service.moderationPage("invalid", null, 0, 20))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void rejectsReportsWhenAnArticleIsDisabledOrParentHidden() {
+    UUID articleId = UUID.randomUUID();
+    var comment = comment(articleId, UUID.randomUUID(), "Comment", "approved");
+    when(comments.findLockedById(comment.id)).thenReturn(Optional.of(comment));
+    when(articles.get(articleId)).thenReturn(article(articleId, false));
+    assertThatThrownBy(() -> service.report(comment.id, UUID.randomUUID(), "abuse", null))
+        .isInstanceOf(IllegalStateException.class);
+    when(articles.get(articleId)).thenReturn(article(articleId, true));
+    comment.parentId = UUID.randomUUID();
+    assertThatThrownBy(() -> service.report(comment.id, UUID.randomUUID(), "abuse", null))
+        .isInstanceOf(IllegalStateException.class);
+    verify(reports, never()).save(any());
   }
 
   private void allowCommenting(UUID articleId, UUID authorId) {

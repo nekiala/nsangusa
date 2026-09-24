@@ -25,11 +25,76 @@ class ProductionConfigurationValidatorTests {
 
   @Test
   void rejectsMissingRequiredCredentials() {
-    var environment = secureEnvironment().withProperty("AI_API_KEY", " ");
+    var environment = secureEnvironment().withProperty("AI_CREDENTIAL_MASTER_KEY", " ");
 
     assertThatThrownBy(() -> new ProductionConfigurationValidator(environment).run(null))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("AI_API_KEY");
+        .hasMessageContaining("AI_CREDENTIAL_MASTER_KEY");
+  }
+
+  @Test
+  void rejectsInvalidAiMasterKeyAndDisabledLiveGate() {
+    assertThatThrownBy(
+            () ->
+                new ProductionConfigurationValidator(
+                        secureEnvironment().withProperty("AI_CREDENTIAL_MASTER_KEY", "not-a-key"))
+                    .run(null))
+        .hasMessageContaining("exactly 32 bytes");
+    assertThatThrownBy(
+            () ->
+                new ProductionConfigurationValidator(
+                        secureEnvironment().withProperty("AI_LIVE_ENABLED", "false"))
+                    .run(null))
+        .hasMessageContaining("AI_LIVE_ENABLED");
+  }
+
+  @Test
+  void rejectsUnencryptedObjectStorageInProduction() {
+    var environment =
+        secureEnvironment().withProperty("news.storage.server-side-encryption", "none");
+
+    assertThatThrownBy(() -> new ProductionConfigurationValidator(environment).run(null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("encryption must remain enabled");
+  }
+
+  @Test
+  void rejectsFakeProvidersInProduction() {
+    var environment = secureEnvironment().withProperty("PROVIDER_MODE", "fake");
+
+    assertThatThrownBy(() -> new ProductionConfigurationValidator(environment).run(null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("PROVIDER_MODE must be production in production");
+  }
+
+  @Test
+  void rejectsNewsletterProviderWithoutProviderSideIdempotency() {
+    var environment = secureEnvironment().withProperty("NEWSLETTER_PROVIDER", "generic-smtp");
+
+    assertThatThrownBy(() -> new ProductionConfigurationValidator(environment).run(null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("provider-side idempotency");
+  }
+
+  @Test
+  void rejectsNewsletterRetryWindowBeyondProviderGuarantee() {
+    var environment = secureEnvironment().withProperty("NEWSLETTER_IDEMPOTENCY_WINDOW", "PT25H");
+
+    assertThatThrownBy(() -> new ProductionConfigurationValidator(environment).run(null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("24-hour guarantee");
+  }
+
+  @Test
+  void rejectsNonResendWebhookSecret() {
+    var environment =
+        secureEnvironment()
+            .withProperty(
+                "NEWSLETTER_WEBHOOK_SECRET", "long-but-not-a-resend-webhook-signing-secret");
+
+    assertThatThrownBy(() -> new ProductionConfigurationValidator(environment).run(null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("whsec_");
   }
 
   @Test
@@ -82,7 +147,9 @@ class ProductionConfigurationValidatorTests {
     environment.setProperty("MAIL_HOST", "mail.example.test");
     environment.setProperty("MAIL_USERNAME", "mailer");
     environment.setProperty("MAIL_PASSWORD", "mail-secret");
-    environment.setProperty("AI_API_KEY", "ai-secret");
+    environment.setProperty(
+        "AI_CREDENTIAL_MASTER_KEY", "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=");
+    environment.setProperty("AI_LIVE_ENABLED", "true");
     environment.setProperty("AI_BASE_URL", "https://ai.example.test");
     environment.setProperty("IMAGE_API_KEY", "image-secret");
     environment.setProperty("IMAGE_BASE_URL", "https://images.example.test");
@@ -93,8 +160,11 @@ class ProductionConfigurationValidatorTests {
     environment.setProperty("S3_SECRET_KEY", "storage-secret");
     environment.setProperty("X_BEARER_TOKEN", "x-secret");
     environment.setProperty("X_API_BASE_URL", "https://api.x.com");
+    environment.setProperty("PROVIDER_MODE", "production");
     environment.setProperty("NEWSLETTER_TOKEN_SECRET", "newsletter-token-secret-at-least-32-chars");
-    environment.setProperty("NEWSLETTER_WEBHOOK_SECRET", "newsletter-webhook-secret-at-least-32");
+    environment.setProperty(
+        "NEWSLETTER_WEBHOOK_SECRET", "whsec_bmV3c2xldHRlci13ZWJob29rLXNlY3JldC1hdC1sZWFzdC0zMg==");
+    environment.setProperty("NEWSLETTER_PROVIDER", "resend");
     environment.setProperty("NEWSLETTER_FROM_ADDRESS", "news@example.test");
     environment.setProperty("OIDC_ISSUER_URI", "https://identity.example.test");
     environment.setProperty("OIDC_CLIENT_ID", "client");

@@ -1,6 +1,7 @@
 package com.nsangusa.news.sourceingestion.internal;
 
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,11 +25,34 @@ interface MonitoredXAccountRepository extends JpaRepository<MonitoredXAccount, U
 interface SourcePostRepository extends JpaRepository<SourcePost, UUID> {
   boolean existsByPostId(String postId);
 
+  boolean existsByEditChainId(String editChainId);
+
+  boolean existsByEditChainIdAndIdNot(String editChainId, UUID id);
+
+  Optional<SourcePost> findByEditChainId(String editChainId);
+
+  List<SourcePost> findByPostIdIn(Collection<String> postIds);
+
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("select p from SourcePost p where p.id = :id")
   Optional<SourcePost> findLockedById(UUID id);
 
   List<SourcePost> findByAccountIdAndStatusNot(String accountId, String status);
+
+  @Query(
+      value =
+          """
+          select *
+            from source_posts
+           where monitored_account_id = :accountId
+             and status <> 'deleted'
+           order by last_checked_at nulls first, published_at desc
+           limit :limit
+          """,
+      nativeQuery = true)
+  List<SourcePost> findReconciliationCandidates(UUID accountId, int limit);
+
+  long countByIdInAndStatus(Collection<UUID> ids, String status);
 
   List<SourcePost> findAllByOrderByPublishedAtDesc(Pageable pageable);
 
@@ -43,7 +67,9 @@ interface SourcePostRepository extends JpaRepository<SourcePost, UUID> {
       value =
           """
         select 'story_candidate' as "associationType", sc.id as "associatedId", sc.status as state
-          from story_candidates sc where sc.primary_source_post_id = :sourcePostId
+          from story_candidate_sources scs
+          join story_candidates sc on sc.id = scs.story_candidate_id
+         where scs.source_post_id = :sourcePostId
         union all
         select 'article' as "associationType", a.id as "associatedId", a.state as state
           from article_sources ars join articles a on a.id = ars.article_id
@@ -74,4 +100,7 @@ interface SourceComplianceActionRepository extends JpaRepository<SourceComplianc
 
 interface SourceRelationshipRepository extends JpaRepository<SourceRelationshipEntity, UUID> {
   List<SourceRelationshipEntity> findBySourcePostIdOrderByRelationshipTypeAsc(UUID sourcePostId);
+
+  boolean existsBySourcePostIdAndRelatedPostIdAndRelationshipType(
+      UUID sourcePostId, String relatedPostId, String relationshipType);
 }

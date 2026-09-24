@@ -74,6 +74,10 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.backend.service.port }}
+            {{- if .Values.monitoring.enabled }}
+            - name: management
+              containerPort: {{ .Values.monitoring.port }}
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "nsangusa.fullname" . }}-backend
@@ -90,22 +94,22 @@ spec:
           startupProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: http
+              port: {{ ternary "management" "http" .Values.monitoring.enabled }}
             {{- toYaml .Values.backend.probes.startup | nindent 12 }}
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: http
+              port: {{ ternary "management" "http" .Values.monitoring.enabled }}
             {{- toYaml .Values.backend.probes.readiness | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: http
+              port: {{ ternary "management" "http" .Values.monitoring.enabled }}
             {{- toYaml .Values.backend.probes.liveness | nindent 12 }}
           lifecycle:
             preStop:
-              exec:
-                command: ["/bin/sh", "-c", "sleep 5"]
+              sleep:
+                seconds: 5
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
           securityContext:
@@ -214,8 +218,8 @@ spec:
             {{- toYaml .Values.frontend.probes.liveness | nindent 12 }}
           lifecycle:
             preStop:
-              exec:
-                command: ["/bin/sh", "-c", "sleep 5"]
+              sleep:
+                seconds: 5
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
           securityContext:

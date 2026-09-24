@@ -27,29 +27,38 @@
             "sources": {
               "type": "array",
               "minItems": 1,
+              "maxItems": 20,
               "items": {
                 "$ref": "common.schema.json#/$defs/sourceReference"
               }
             },
             "analysis": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 20000,
+              "pattern": "\\S"
             },
             "claims": {
               "type": "array",
               "minItems": 1,
+              "maxItems": 50,
               "items": {
                 "$ref": "common.schema.json#/$defs/claim"
               }
             },
             "confidence": {
-              "type": "number"
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
             },
             "warnings": {
               "type": "array",
-              "minItems": 1,
+              "maxItems": 50,
               "items": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "pattern": "\\S"
               }
             }
           }
@@ -58,4 +67,3 @@
     }
   ]
 }
-

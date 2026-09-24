@@ -1,0 +1,1157 @@
+paths:
+  /api/v1/articles/{articleId}/comments:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityPublicComments
+      summary: Read visible comments and thread-preserving deletion markers
+      description: >
+        Returns an empty list when the article is unpublished or comments are disabled
+        by the global, article, or per-article switch. Approved replies beneath pending,
+        rejected, or spam parents are hidden. Deleted parents of visible replies are
+        returned as tombstones. Does not expose other users' pending comments.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ArticleId'
+      responses:
+        '200':
+          description: Publicly visible comments, including applicable deletion markers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Phase4CommunityComment'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404':
+          description: Article not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+    post:
+      tags: [Comments]
+      operationId: phase4CommunitySubmitComment
+      summary: Submit an authenticated reader or staff comment
+      description: >
+        Requires an email-verified authenticated READER, MODERATOR, EDITOR, or ADMINISTRATOR
+        with an unsuspended commenting privilege. The article must be published and all
+        comment switches must permit posting. Body is trimmed plain text. A reply must
+        target a nondeleted approved top-level comment on the same article; only one
+        reply level is supported. Spam scoring and approval policy choose approved,
+        pending, or spam state. Returns 202 regardless of the selected initial state.
+        A supplied Idempotency-Key replays the same creation result without duplicate
+        comments or submission events; omitting it retains legacy unkeyed execution.
+      x-required-roles: [READER, MODERATOR, EDITOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/ArticleId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Phase4CommunitySubmitRequest'}
+      responses:
+        '202':
+          description: Comment accepted; inspect the discussion for its current state.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IdResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Article or reply parent not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/articles/{articleId}/discussion:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityDiscussion
+      summary: Load current discussion, viewer eligibility, and effective comment policy
+      description: >
+        Anonymous access is allowed. When authenticated, viewerId and privilege
+        information refer only to the current account, and the comments list additionally
+        contains that account's own pending, rejected, spam, and deleted comments. The
+        effective enabled flag combines published state, the article's commentsEnabled
+        switch, the global switch, and the per-article enabled override. A false enabled
+        flag always produces an empty comments list. Per-article approval overrides may
+        override the global approval default but cannot bypass availability switches.
+        This personalized response must never enter a public or shared cache.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ArticleId'
+      responses:
+        '200':
+          description: Effective policy and visible discussion for the current viewer.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Phase4CommunityDiscussion'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404':
+          description: Article not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/comments/{commentId}:
+    put:
+      tags: [Comments]
+      operationId: phase4CommunityEditOwnComment
+      summary: Edit an owned comment within the configured editing window
+      description: >
+        Requires the authenticated comment author and an eligible account role. The
+        comment must not be deleted, comments must currently be enabled for its published
+        article, and commenting privilege must not be suspended. The editing deadline is
+        exclusive: now must be before createdAt plus editingWindowMinutes. A zero-minute
+        window disables edits. Editing rescans spam and reapplies approval policy, so an
+        approved comment may return to pending or spam. Records a body-free audit event.
+        expectedVersion is required; stale versions return 409. Successful keyed retries
+        replay without repeating the edit, even if the edit window has since expired.
+      x-required-roles: [READER, MODERATOR, EDITOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/CommentId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Phase4CommunityEditRequest'}
+      responses:
+        '204': {description: Comment edited and rechecked against current moderation policy.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Comment or article not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+    delete:
+      tags: [Comments]
+      operationId: phase4CommunityDeleteOwnComment
+      summary: Soft-delete an owned comment while preserving thread position
+      description: >
+        Requires the authenticated author and an eligible account role. Unlike editing,
+        deletion is not restricted by the editing window, commenting suspension, or
+        article availability. The text is replaced with a deletion marker and an audit
+        event is recorded. An approved comment retains approved state as a tombstone;
+        other states become deleted. The text cannot be restored. expectedVersion is
+        required and checked even when the comment is already deleted. A keyed retry
+        replays the original successful outcome without duplicate effects.
+      x-required-roles: [READER, MODERATOR, EDITOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/CommentId'
+        - name: expectedVersion
+          in: query
+          required: true
+          schema: {$ref: '#/components/schemas/Phase4CommunityExistingVersion'}
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204': {description: Author deletion applied, or a matching successful command replayed.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Comment not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/comments/{commentId}/reports:
+    post:
+      tags: [Comments]
+      operationId: phase4CommunityReportComment
+      summary: Report another account's visible comment
+      description: >
+        Requires an eligible authenticated reader or staff account. Reporting one's own
+        comment is rejected with 400. The comment and its article must currently be
+        visible; deleted comments and replies beneath hidden parents cannot be reported.
+        One report per comment and reporter is permitted. Duplicate unkeyed reports or
+        reports on unavailable comments return 409. Reaching the configured open-report
+        threshold moves an approved comment to pending. Creates an audit event. A matching
+        Idempotency-Key replays the original report identifier without a second report.
+        Commenting suspension does not remove the ability to report another account.
+      x-required-roles: [READER, MODERATOR, EDITOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/CommentId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Phase4CommunityReportRequest'}
+      responses:
+        '202':
+          description: Report recorded or its previous successful result replayed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IdResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Comment or article not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/comments:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityModerationInventory
+      summary: Discover a bounded, pageable comment moderation inventory
+      description: >
+        Requires MODERATOR or ADMINISTRATOR. Omitting state includes all states; the
+        browser defaults its filter to pending. Optional articleId filters by article.
+        Results are ordered by creation time ascending, then identifier, and include
+        current versions, author display names, article labels, spam evidence, and
+        open-report counts. This endpoint also discovers previously approved, rejected,
+        and deleted comments; the legacy queue only returns pending and spam comments.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - name: state
+          in: query
+          schema: {$ref: '#/components/schemas/Phase4CommunityCommentState'}
+        - name: articleId
+          in: query
+          schema: {$ref: '#/components/schemas/Identifier'}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 0, maximum: 100000, default: 0}
+        - $ref: '#/components/parameters/WorkspaceSize'
+      responses:
+        '200':
+          description: Bounded moderation inventory and matching total.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Phase4CommunityModerationPage'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/comments/{commentId}:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityModerationDetail
+      summary: Inspect a comment discovered through a queue or abuse report
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/CommentId'
+      responses:
+        '200':
+          description: Current moderation detail, including optimistic-lock version.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Phase4CommunityModerationItem'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Comment or article not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/comments/{commentId}/moderate:
+    post:
+      tags: [Comments]
+      operationId: phase4CommunityModerateComment
+      summary: Approve, reject, mark spam, or delete a comment with a reason
+      description: >
+        Requires MODERATOR or ADMINISTRATOR, including a fresh identity-module role
+        check before idempotent replay. All decisions, including approval, require a
+        nonblank reason and current expectedVersion. Persists moderation history and an
+        audit event, and resolves all open reports for the comment. Deleted comments
+        cannot be moderated again or resurrected. Moderator deletion replaces the text,
+        marks state deleted, and preserves a tombstone when needed by visible replies.
+        Approval does not bypass public article or global/per-article visibility rules.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/CommentId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Phase4CommunityModerationRequest'}
+      responses:
+        '204': {description: Decision and audit persisted; open reports resolved.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Comment not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/comments/queue:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityLegacyModerationQueue
+      summary: Read the bounded legacy pending-and-spam queue
+      description: >
+        Requires MODERATOR or ADMINISTRATOR. Returns pending and spam comments ordered
+        by creation time ascending. Use the pageable /api/v1/admin/comments inventory
+        for additional states and navigation.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+      responses:
+        '200':
+          description: At most limit pending or spam comments.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 100
+                items: {$ref: '#/components/schemas/Phase4CommunityModerationItem'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/comment-reports:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityOpenReports
+      summary: Read the oldest open abuse reports
+      description: >
+        Requires MODERATOR or ADMINISTRATOR. Returns only open reports, oldest first.
+        Use commentId with the moderation-detail route to inspect the reported comment.
+        A moderation decision resolves every open report on the selected comment.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+      responses:
+        '200':
+          description: At most limit open reports.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 100
+                items: {$ref: '#/components/schemas/Phase4CommunityReport'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/comments/{commentId}/history:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityModerationHistory
+      summary: Read the latest 100 moderation decisions for a comment
+      description: >
+        Requires MODERATOR or ADMINISTRATOR. Returns at most 100 decisions ordered by
+        creation time descending. Older records remain persisted and auditable. Legacy
+        records may have null previousState or reason; all new moderation requests
+        require a reason.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/CommentId'
+      responses:
+        '200':
+          description: Latest moderation history.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 100
+                items: {$ref: '#/components/schemas/Phase4CommunityModerationHistory'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Comment not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/comment-articles:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityArticleInventory
+      summary: Discover article labels for per-article comment policy controls
+      description: >
+        Requires MODERATOR or ADMINISTRATOR. Uses the articles module's public service,
+        not its repositories. Includes articles in all lifecycle states, ordered by
+        updatedAt descending and identifier ascending; does not expose article bodies.
+        Comment enable overrides never make an unpublished article accept comments.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/WorkspacePage'
+        - $ref: '#/components/parameters/WorkspaceSize'
+      responses:
+        '200':
+          description: Bounded article labels and matching total.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Phase4CommunityArticlePage'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/commenting-users:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunitySearchAccounts
+      summary: Find active community accounts without manually entering identifiers
+      description: >
+        Requires MODERATOR or ADMINISTRATOR, rechecked by the public identity service.
+        A trimmed, case-insensitive display-name or email search of 2-100 characters is
+        required. Only enabled, email-verified, nondeleted accounts are returned.
+        Results are ordered by display name then identifier. At most 20 accounts are
+        returned; refine the query when necessary. Email addresses, role sets, and
+        authentication details are not exposed by the result DTO.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema: {type: string}
+          description: Trimmed query must contain 2-100 characters.
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 20, default: 20}
+      responses:
+        '200':
+          description: Bounded active-account search results; no email addresses.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 20
+                items: {$ref: '#/components/schemas/Phase4CommunityAccount'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/commenting-users/{userId}:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityAccountDetail
+      summary: Resolve a discovered comment author's safe account label
+      description: >
+        Requires MODERATOR or ADMINISTRATOR, rechecked by the identity service. Unlike
+        account search, direct lookup may return inactive accounts. A deleted account's
+        display name is replaced with Deleted user. Changing commenting privileges does
+        not reactivate an inactive account or change its identity roles.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Safe account label and effective activity flag.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Phase4CommunityAccount'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Account not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/commenting-privileges/{userId}:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityCommentingPrivilege
+      summary: Read an account's effective commenting privilege and version
+      description: >
+        Requires MODERATOR or ADMINISTRATOR and verifies target existence through the
+        identity service. Expired suspensions are reported as allowed while retaining
+        the historical suspendedUntil/reason/moderatorId. An account without a stored
+        privilege row is allowed with version -1, null historical fields, and updatedAt
+        equal to the Unix epoch. Account eligibility remains an independent check.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Effective commenting privilege.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Phase4CommunityPrivilege'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Account not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/commenting-privileges/{userId}/history:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityPrivilegeHistory
+      summary: Read the latest 100 commenting-privilege changes
+      description: >
+        Requires MODERATOR or ADMINISTRATOR and an existing target account. Results
+        are ordered by creation time descending. Historical records remain stored beyond
+        this bounded response. Suspension expiration is effective at read time and does
+        not create a synthetic restoration-history entry.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Latest commenting-privilege audit history.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 100
+                items: {$ref: '#/components/schemas/Phase4CommunityPrivilegeHistory'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Account not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/commenting-privileges/{userId}/suspend:
+    post:
+      tags: [Comments]
+      operationId: phase4CommunitySuspendCommenting
+      summary: Suspend commenting indefinitely or until a future instant
+      description: >
+        Requires a freshly verified MODERATOR or ADMINISTRATOR role and an existing
+        target account. until may be omitted or null for indefinite suspension; otherwise
+        it must be strictly in the future when a new command executes. Requires a reason
+        and expectedVersion from the privilege response. Use -1 only for an absent
+        privilege row; its first persisted version is 0. Writes privilege history and
+        audit atomically. A successful keyed command can replay after until has passed.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Phase4CommunitySuspensionRequest'}
+      responses:
+        '204': {description: Suspension and audit persisted, or original successful command replayed.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Account not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/commenting-privileges/{userId}/restore:
+    post:
+      tags: [Comments]
+      operationId: phase4CommunityRestoreCommenting
+      summary: Restore an account's commenting privilege with an audited reason
+      description: >
+        Requires a freshly verified MODERATOR or ADMINISTRATOR role and an existing
+        target account. Requires reason and expectedVersion, with -1 representing an
+        absent privilege row. Clears suspendedUntil, records allowed status, and appends
+        privilege history and an audit record. Does not reactivate an inactive identity
+        account, change roles, or bypass disabled-article/global comment policies.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Phase4CommunityRestoreRequest'}
+      responses:
+        '204': {description: Restoration and audit persisted, or successful command replayed.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Account not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/comment-settings:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityGlobalPolicy
+      summary: Read global comment availability and moderation safeguards
+      description: >
+        Requires MODERATOR or ADMINISTRATOR. When the singleton row is absent, returns
+        configured application defaults with version -1 rather than persisting a row.
+        updatedAt for these defaults is the service initialization time.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      responses:
+        '200':
+          description: Current global policy or configured defaults.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Phase4CommunityGlobalPolicy'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+    put:
+      tags: [Comments]
+      operationId: phase4CommunityUpdateGlobalPolicy
+      summary: Update global comment policy as an administrator
+      description: >
+        ADMINISTRATOR only, with a fresh identity-module role check before replay.
+        Requires expectedVersion; -1 is valid only while the singleton row is absent.
+        The first persisted row has version 0. Thresholds must be finite and
+        reviewSpamThreshold must not exceed rejectSpamThreshold. Records a policy audit
+        event. This is a replacement operation, not a patch: omitted primitive-valued
+        policy fields receive Java defaults (false or 0), not their current stored values.
+        Clients should always send the full policy.
+      x-required-roles: [ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Phase4CommunityGlobalPolicyRequest'}
+      responses:
+        '204': {description: Global policy and audit persisted.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+  /api/v1/admin/articles/{articleId}/comment-settings:
+    get:
+      tags: [Comments]
+      operationId: phase4CommunityArticlePolicy
+      summary: Read an article's comment-policy overrides
+      description: >
+        Requires MODERATOR or ADMINISTRATOR and an existing article. An absent settings
+        row returns null overrides, version -1, and updatedAt equal to the Unix epoch.
+        Null overrides inherit policy. An enabledOverride of true cannot override a
+        disabled global switch, the article's commentsEnabled=false, or unpublished state.
+      x-required-roles: [MODERATOR, ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/ArticleId'
+      responses:
+        '200':
+          description: Current article overrides or inherited defaults.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Phase4CommunityArticlePolicy'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Article not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+    put:
+      tags: [Comments]
+      operationId: phase4CommunityUpdateArticlePolicy
+      summary: Set or clear article comment overrides as an administrator
+      description: >
+        ADMINISTRATOR only, with a fresh role check before replay. Requires an existing
+        article and expectedVersion; -1 denotes an absent article settings row. Its first
+        persisted version is 0. Omitted or null overrides clear that override and inherit
+        the global policy; this is replacement semantics, not patch semantics. Availability
+        remains subject to published state, global enabled, and article commentsEnabled.
+        Writes an article-policy audit event.
+      x-required-roles: [ADMINISTRATOR]
+      security: [{sessionCookie: []}, {basicAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/ArticleId'
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Phase4CommunityArticlePolicyRequest'}
+      responses:
+        '204': {description: Article overrides and audit persisted.}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404':
+          description: Article not found.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+        default: {$ref: '#/components/responses/UnexpectedError'}
+
+components:
+  schemas:
+    Phase4CommunityExistingVersion:
+      type: integer
+      format: int64
+      minimum: 0
+      description: Current persisted comment version; stale values are rejected with 409.
+
+    Phase4CommunityOptionalRowVersion:
+      type: integer
+      format: int64
+      minimum: -1
+      description: >
+        -1 denotes an absent global-policy, article-policy, or privilege row. Use the
+        version returned by the corresponding GET. The first persisted row has version 0.
+
+    Phase4CommunityCommentState:
+      type: string
+      enum: [pending, approved, rejected, spam, deleted]
+
+    Phase4CommunityDecision:
+      type: string
+      enum: [approved, rejected, spam, deleted]
+
+    Phase4CommunityReportReason:
+      type: string
+      enum: [abuse, harassment, hate, misinformation, spam, other]
+
+    Phase4CommunityPlainBody:
+      type: string
+      minLength: 1
+      maxLength: 5000
+      pattern: '^(?=[\s\S]*\S)[^<>]+$'
+      description: Nonblank plain text; angle brackets are rejected and surrounding whitespace is trimmed.
+
+    Phase4CommunityRequiredReason:
+      type: string
+      minLength: 1
+      maxLength: 2000
+      pattern: '\S'
+      description: Nonblank reason. Stored text is trimmed and must be rendered as text, not HTML.
+
+    Phase4CommunityComment:
+      type: object
+      additionalProperties: false
+      required: [id, authorId, authorName, body, parentId, state, createdAt, editedAt, deletedByAuthor, deleted, version]
+      properties:
+        id: {$ref: '#/components/schemas/Identifier'}
+        authorId: {$ref: '#/components/schemas/Identifier'}
+        authorName:
+          type: string
+          description: Safe display name from the identity service, with deleted-account or missing-name fallback.
+        body:
+          type: string
+          maxLength: 5000
+          description: Plain comment text or an irreversible deletion marker.
+        parentId: {type: [string, 'null'], format: uuid}
+        state: {$ref: '#/components/schemas/Phase4CommunityCommentState'}
+        createdAt: {type: string, format: date-time}
+        editedAt: {type: [string, 'null'], format: date-time}
+        deletedByAuthor: {type: boolean}
+        deleted:
+          type: boolean
+          description: True when text was deleted by its author or a moderator; an author tombstone may still have approved state.
+        version: {$ref: '#/components/schemas/Phase4CommunityExistingVersion'}
+
+    Phase4CommunityDiscussion:
+      type: object
+      additionalProperties: false
+      required: [comments, viewerId, authenticated, eligible, enabled, requireApproval, editingWindowMinutes, maximumReplyDepth, privilegeStatus, suspendedUntil, canComment]
+      properties:
+        comments:
+          type: array
+          items: {$ref: '#/components/schemas/Phase4CommunityComment'}
+          description: Publicly visible comments plus this viewer's own nonpublic comments; empty when enabled is false.
+        viewerId: {type: [string, 'null'], format: uuid}
+        authenticated: {type: boolean}
+        eligible:
+          type: boolean
+          description: True for an email-verified authenticated profile with READER, MODERATOR, EDITOR, or ADMINISTRATOR role.
+        enabled:
+          type: boolean
+          description: Effective conjunction of published state and global/article/per-article availability switches.
+        requireApproval: {type: boolean}
+        editingWindowMinutes: {type: integer, minimum: 0, maximum: 10080}
+        maximumReplyDepth: {type: integer, const: 1}
+        privilegeStatus: {type: string, enum: [allowed, suspended]}
+        suspendedUntil:
+          type: [string, 'null']
+          format: date-time
+          description: Null for no recorded timed suspension or an indefinite suspension; may retain an expired timestamp.
+        canComment:
+          type: boolean
+          description: Authenticated, eligible, enabled, and not currently suspended.
+
+    Phase4CommunitySubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [body]
+      properties:
+        body: {$ref: '#/components/schemas/Phase4CommunityPlainBody'}
+        parentId:
+          type: [string, 'null']
+          format: uuid
+          description: Omit or null for a top-level comment; otherwise an approved, nondeleted top-level parent on the same article.
+
+    Phase4CommunityEditRequest:
+      type: object
+      additionalProperties: false
+      required: [body, expectedVersion]
+      properties:
+        body: {$ref: '#/components/schemas/Phase4CommunityPlainBody'}
+        expectedVersion: {$ref: '#/components/schemas/Phase4CommunityExistingVersion'}
+
+    Phase4CommunityReportRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: {$ref: '#/components/schemas/Phase4CommunityReportReason'}
+        details:
+          type: [string, 'null']
+          maxLength: 2000
+          description: Optional plain-text details. Blank or omitted values are stored as null.
+
+    Phase4CommunityModerationRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, reason, expectedVersion]
+      properties:
+        decision: {$ref: '#/components/schemas/Phase4CommunityDecision'}
+        reason: {$ref: '#/components/schemas/Phase4CommunityRequiredReason'}
+        expectedVersion: {$ref: '#/components/schemas/Phase4CommunityExistingVersion'}
+
+    Phase4CommunityModerationItem:
+      type: object
+      additionalProperties: false
+      required: [id, articleId, authorId, authorName, body, state, spamScore, spamReason, openReports, createdAt, editedAt, deletedByAuthor, parentId, deleted, version, articleHeadline, articleSlug]
+      properties:
+        id: {$ref: '#/components/schemas/Identifier'}
+        articleId: {$ref: '#/components/schemas/Identifier'}
+        authorId: {$ref: '#/components/schemas/Identifier'}
+        authorName: {type: string}
+        body: {type: string, maxLength: 5000}
+        state: {$ref: '#/components/schemas/Phase4CommunityCommentState'}
+        spamScore: {type: number, format: double, minimum: 0, maximum: 1}
+        spamReason: {type: [string, 'null'], maxLength: 1000}
+        openReports: {type: integer, format: int64, minimum: 0}
+        createdAt: {type: string, format: date-time}
+        editedAt: {type: [string, 'null'], format: date-time}
+        deletedByAuthor: {type: boolean}
+        parentId: {type: [string, 'null'], format: uuid}
+        deleted: {type: boolean}
+        version: {$ref: '#/components/schemas/Phase4CommunityExistingVersion'}
+        articleHeadline: {type: string, maxLength: 300}
+        articleSlug: {type: string, maxLength: 250}
+
+    Phase4CommunityModerationPage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, total]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/Phase4CommunityModerationItem'}
+        page: {type: integer, minimum: 0, maximum: 100000}
+        size: {type: integer, minimum: 1, maximum: 100}
+        total: {type: integer, format: int64, minimum: 0}
+
+    Phase4CommunityReport:
+      type: object
+      additionalProperties: false
+      required: [id, commentId, reporterId, reason, details, status, createdAt]
+      properties:
+        id: {$ref: '#/components/schemas/Identifier'}
+        commentId: {$ref: '#/components/schemas/Identifier'}
+        reporterId: {$ref: '#/components/schemas/Identifier'}
+        reason: {$ref: '#/components/schemas/Phase4CommunityReportReason'}
+        details: {type: [string, 'null'], maxLength: 2000}
+        status: {type: string, enum: [open, resolved]}
+        createdAt: {type: string, format: date-time}
+
+    Phase4CommunityModerationHistory:
+      type: object
+      additionalProperties: false
+      required: [id, moderatorId, previousState, action, reason, createdAt]
+      properties:
+        id: {$ref: '#/components/schemas/Identifier'}
+        moderatorId: {$ref: '#/components/schemas/Identifier'}
+        previousState:
+          type: [string, 'null']
+          enum: [pending, approved, rejected, spam, deleted, null]
+          description: Null is possible on legacy history records.
+        action: {$ref: '#/components/schemas/Phase4CommunityDecision'}
+        reason:
+          type: [string, 'null']
+          maxLength: 2000
+          description: Null is possible on legacy approval history; new decisions require a reason.
+        createdAt: {type: string, format: date-time}
+
+    Phase4CommunityArticleOption:
+      type: object
+      additionalProperties: false
+      required: [id, headline, slug, state, commentsEnabled]
+      properties:
+        id: {$ref: '#/components/schemas/Identifier'}
+        headline: {type: string, maxLength: 300}
+        slug: {type: string, maxLength: 250}
+        state:
+          type: string
+          enum: [DISCOVERED, ANALYZING, DRAFTING, AWAITING_REVIEW, APPROVED, SCHEDULED, PUBLISHED, UNPUBLISHED, REJECTED, ARCHIVED]
+        commentsEnabled:
+          type: boolean
+          description: Article-level switch, not the effective conjunction with global policy and publication state.
+
+    Phase4CommunityArticlePage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, total]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/Phase4CommunityArticleOption'}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+        total: {type: integer, format: int64, minimum: 0}
+
+    Phase4CommunityAccount:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, staff, active]
+      properties:
+        id: {$ref: '#/components/schemas/Identifier'}
+        displayName:
+          type: string
+          description: Account display name; Deleted user for a deleted identity account.
+        staff:
+          type: boolean
+          description: True when the account has at least one role other than READER.
+        active:
+          type: boolean
+          description: True only when the account is enabled, email-verified, and not deleted.
+
+    Phase4CommunityPrivilege:
+      type: object
+      additionalProperties: false
+      required: [userId, status, suspendedUntil, reason, moderatorId, updatedAt, version]
+      properties:
+        userId: {$ref: '#/components/schemas/Identifier'}
+        status: {type: string, enum: [allowed, suspended]}
+        suspendedUntil: {type: [string, 'null'], format: date-time}
+        reason: {type: [string, 'null'], maxLength: 2000}
+        moderatorId: {type: [string, 'null'], format: uuid}
+        updatedAt: {type: string, format: date-time}
+        version: {$ref: '#/components/schemas/Phase4CommunityOptionalRowVersion'}
+
+    Phase4CommunityPrivilegeHistory:
+      type: object
+      additionalProperties: false
+      required: [id, action, suspendedUntil, reason, moderatorId, createdAt]
+      properties:
+        id: {$ref: '#/components/schemas/Identifier'}
+        action: {type: string, enum: [suspended, restored]}
+        suspendedUntil: {type: [string, 'null'], format: date-time}
+        reason: {$ref: '#/components/schemas/Phase4CommunityRequiredReason'}
+        moderatorId: {$ref: '#/components/schemas/Identifier'}
+        createdAt: {type: string, format: date-time}
+
+    Phase4CommunitySuspensionRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        until:
+          type: [string, 'null']
+          format: date-time
+          description: Omit or null for indefinite suspension; otherwise strictly future at first execution.
+        reason: {$ref: '#/components/schemas/Phase4CommunityRequiredReason'}
+        expectedVersion: {$ref: '#/components/schemas/Phase4CommunityOptionalRowVersion'}
+
+    Phase4CommunityRestoreRequest:
+      type: object
+      additionalProperties: false
+      required: [reason, expectedVersion]
+      properties:
+        reason: {$ref: '#/components/schemas/Phase4CommunityRequiredReason'}
+        expectedVersion: {$ref: '#/components/schemas/Phase4CommunityOptionalRowVersion'}
+
+    Phase4CommunityGlobalPolicy:
+      type: object
+      additionalProperties: false
+      required: [enabled, requireApproval, editingWindowMinutes, reviewSpamThreshold, rejectSpamThreshold, reportEscalationThreshold, updatedAt, version]
+      properties:
+        enabled: {type: boolean}
+        requireApproval: {type: boolean}
+        editingWindowMinutes: {type: integer, minimum: 0, maximum: 10080}
+        reviewSpamThreshold:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Finite score threshold; never greater than rejectSpamThreshold.
+        rejectSpamThreshold: {type: number, format: double, minimum: 0, maximum: 1}
+        reportEscalationThreshold: {type: integer, minimum: 1, maximum: 100}
+        updatedAt: {type: string, format: date-time}
+        version: {$ref: '#/components/schemas/Phase4CommunityOptionalRowVersion'}
+
+    Phase4CommunityGlobalPolicyRequest:
+      type: object
+      additionalProperties: false
+      required: [reportEscalationThreshold, expectedVersion]
+      description: >
+        Send the complete policy when updating. The Java record uses primitives for
+        policy values: omission defaults booleans to false and numbers to 0.
+        reportEscalationThreshold cannot be omitted because its default 0 fails its
+        minimum constraint. expectedVersion is a required nonnull boxed integer.
+        reviewSpamThreshold must not exceed rejectSpamThreshold.
+      properties:
+        enabled: {type: boolean, default: false}
+        requireApproval: {type: boolean, default: false}
+        editingWindowMinutes: {type: integer, minimum: 0, maximum: 10080, default: 0}
+        reviewSpamThreshold: {type: number, format: double, minimum: 0, maximum: 1, default: 0}
+        rejectSpamThreshold: {type: number, format: double, minimum: 0, maximum: 1, default: 0}
+        reportEscalationThreshold: {type: integer, minimum: 1, maximum: 100}
+        expectedVersion: {$ref: '#/components/schemas/Phase4CommunityOptionalRowVersion'}
+
+    Phase4CommunityArticlePolicy:
+      type: object
+      additionalProperties: false
+      required: [articleId, enabledOverride, requireApprovalOverride, updatedAt, version]
+      properties:
+        articleId: {$ref: '#/components/schemas/Identifier'}
+        enabledOverride:
+          type: [boolean, 'null']
+          description: Null inherits; false disables; true still requires global/article switches and published state.
+        requireApprovalOverride:
+          type: [boolean, 'null']
+          description: Null inherits global approval; otherwise overrides that default subject to spam checks.
+        updatedAt: {type: string, format: date-time}
+        version: {$ref: '#/components/schemas/Phase4CommunityOptionalRowVersion'}
+
+    Phase4CommunityArticlePolicyRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        enabledOverride:
+          type: [boolean, 'null']
+          description: Omitted or null clears the override and inherits policy.
+        requireApprovalOverride:
+          type: [boolean, 'null']
+          description: Omitted or null clears the override and inherits global approval.
+        expectedVersion: {$ref: '#/components/schemas/Phase4CommunityOptionalRowVersion'}

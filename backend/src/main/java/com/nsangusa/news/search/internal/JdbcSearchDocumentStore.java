@@ -16,14 +16,23 @@ import org.springframework.stereotype.Repository;
 class JdbcSearchDocumentStore implements SearchDocumentStore {
   private static final String RESULT_COLUMNS =
       """
-      select article_id, slug, headline, summary, topic, tags, published_at, %s as rank
-      from article_search_documents
+      select d.article_id, d.slug, d.headline, d.summary, d.topic, d.tags,
+             d.published_at, d.updated_at, %s as rank
+      from article_search_documents d
+      join articles a on a.id = d.article_id and a.state = 'PUBLISHED'
+        and a.published_at is not null
       %s
       order by %s
       limit :limit offset :offset
       """;
 
   private final JdbcClient jdbc;
+  private static final String VISIBLE_DOCUMENTS =
+      """
+      from article_search_documents d
+      join articles a on a.id = d.article_id and a.state = 'PUBLISHED'
+        and a.published_at is not null
+      """;
 
   JdbcSearchDocumentStore(JdbcClient jdbc) {
     this.jdbc = jdbc;
@@ -33,7 +42,7 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
   public SearchPage search(String query, int page, int size) {
     String predicate = "where search_vector @@ websearch_to_tsquery('english', :query)";
     long total =
-        jdbc.sql("select count(*) from article_search_documents " + predicate)
+        jdbc.sql("select count(*) " + VISIBLE_DOCUMENTS + predicate)
             .param("query", query)
             .query(Long.class)
             .single();
@@ -41,7 +50,7 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
         RESULT_COLUMNS.formatted(
             "ts_rank_cd(search_vector, websearch_to_tsquery('english', :query))",
             predicate,
-            "rank desc, published_at desc");
+            "rank desc, d.published_at desc, d.article_id asc");
     List<SearchResult> items =
         jdbc.sql(sql)
             .param("query", query)
@@ -54,23 +63,24 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
 
   @Override
   public SearchPage byTopic(String topic, int page, int size) {
-    return facetPage("topic = :value", topic, page, size);
+    return facetPage("d.topic = :value", topic, page, size);
   }
 
   @Override
   public SearchPage byTag(String tag, int page, int size) {
-    return facetPage(":value = any(string_to_array(tags, ','))", tag, page, size);
+    return facetPage(":value = any(string_to_array(d.tags, ','))", tag, page, size);
   }
 
   @Override
   public List<Facet> topics() {
     return jdbc.sql(
             """
-            select topic as value, count(*) as article_count
-            from article_search_documents
-            group by topic
+            select d.topic as value, count(*) as article_count
+            %s
+            group by d.topic
             order by article_count desc, value
-            """)
+            """
+                .formatted(VISIBLE_DOCUMENTS))
         .query((rs, row) -> new Facet(rs.getString("value"), rs.getLong("article_count")))
         .list();
   }
@@ -79,13 +89,14 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
   public List<Facet> tags() {
     return jdbc.sql(
             """
-            select tag as value, count(*) as article_count
-            from article_search_documents
-            cross join lateral unnest(string_to_array(tags, ',')) as tag
+            select tag as value, count(distinct d.article_id) as article_count
+            %s
+            cross join lateral unnest(string_to_array(d.tags, ',')) as tag
             where tag <> ''
             group by tag
             order by article_count desc, value
-            """)
+            """
+                .formatted(VISIBLE_DOCUMENTS))
         .query((rs, row) -> new Facet(rs.getString("value"), rs.getLong("article_count")))
         .list();
   }
@@ -118,10 +129,11 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
             "tags",
             article.tags().stream()
                 .map(JdbcSearchDocumentStore::normalize)
+                .distinct()
                 .sorted()
                 .collect(java.util.stream.Collectors.joining(",")))
-        .param("publishedAt", article.publishedAt())
-        .param("updatedAt", article.updatedAt())
+        .param("publishedAt", java.sql.Timestamp.from(article.publishedAt()))
+        .param("updatedAt", java.sql.Timestamp.from(article.updatedAt()))
         .update();
   }
 
@@ -134,11 +146,13 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
 
   private SearchPage facetPage(String predicate, String value, int page, int size) {
     long total =
-        jdbc.sql("select count(*) from article_search_documents where " + predicate)
+        jdbc.sql("select count(*) " + VISIBLE_DOCUMENTS + "where " + predicate)
             .param("value", value)
             .query(Long.class)
             .single();
-    String sql = RESULT_COLUMNS.formatted("0.0", "where " + predicate, "published_at desc");
+    String sql =
+        RESULT_COLUMNS.formatted(
+            "0.0", "where " + predicate, "d.published_at desc, d.article_id asc");
     List<SearchResult> items =
         jdbc.sql(sql)
             .param("value", value)
@@ -159,6 +173,7 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
         rs.getString("topic"),
         tags == null || tags.isBlank() ? List.of() : Arrays.asList(tags.split(",")),
         rs.getTimestamp("published_at").toInstant(),
+        rs.getTimestamp("updated_at").toInstant(),
         rs.getDouble("rank"));
   }
 

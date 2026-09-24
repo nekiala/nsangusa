@@ -1,0 +1,84 @@
+{
+  "baseline": "supported-v1-protocol-2026-09-19",
+  "provenance": "Synthetic protocol examples authored after Step 4, not an old deployment or release.",
+  "articleCommand": {
+    "headline": "Synthetic headline", "summary": "Synthetic summary.", "body": "Legacy plain article body.",
+    "editorialContext": null, "seoTitle": "Synthetic headline", "seoDescription": "Synthetic description.",
+    "slugSuggestion": "synthetic-headline", "topic": "science", "tags": ["science"],
+    "sources": [{
+      "sourcePostId": "44444444-4444-4444-8444-444444444444", "account": "fixture", "postId": "1001",
+      "url": "https://example.test/posts/1001", "publishedAt": "2026-09-19T00:00:00Z"
+    }],
+    "commentsEnabled": true
+  },
+  "content": {
+    "version": 1,
+    "blocks": [
+      {"type": "heading", "text": " Synthetic heading ", "items": null, "url": null},
+      {"type": "paragraph", "text": " Synthetic paragraph. ", "items": null, "url": null},
+      {"type": "quote", "text": " Synthetic quotation. ", "items": null, "url": null},
+      {"type": "unordered_list", "items": [" First ", " Second "], "text": null, "url": null},
+      {"type": "ordered_list", "items": [" One ", " Two "], "text": null, "url": null},
+      {"type": "link", "text": " Source ", "url": "https://example.test/posts/1001", "items": null}
+    ]
+  },
+  "article": {
+    "id": "22222222-2222-4222-8222-222222222222", "slug": "synthetic-headline",
+    "headline": "Synthetic headline", "summary": "Synthetic summary.", "body": "Legacy plain article body.",
+    "editorialContext": null, "topic": "science", "tags": ["science"], "state": "AWAITING_REVIEW",
+    "heroObjectKey": "articles/fixture/hero.svg", "imageAltText": "Original neutral editorial illustration.",
+    "generatedImage": false, "commentsEnabled": true, "publishedAt": null,
+    "updatedAt": "2026-09-19T00:00:00Z", "version": 4,
+    "sources": [{
+      "sourcePostId": "44444444-4444-4444-8444-444444444444", "account": "fixture", "postId": "1001",
+      "url": "https://example.test/posts/1001", "publishedAt": "2026-09-19T00:00:00Z"
+    }],
+    "warnings": [], "confidence": 0.75, "storyCandidateId": null,
+    "seoTitle": "Synthetic headline", "seoDescription": "Synthetic description.",
+    "approvedImageGenerationId": "55555555-5555-4555-8555-555555555555",
+    "pendingImageGenerationId": null, "imageApprovalRequired": false,
+    "correctionNote": null, "approvedBy": null, "approvedAt": null
+  },
+  "profile": {
+    "id": "66666666-6666-4666-8666-666666666666",
+    "email": "reader@example.test", "displayName": "Synthetic reader", "roles": ["READER"],
+    "emailVerified": true, "createdAt": "2026-09-19T00:00:00Z", "lastLoginAt": null,
+    "newsletter": null, "version": 0
+  },
+  "adminUser": {
+    "id": "66666666-6666-4666-8666-666666666666",
+    "email": "reader@example.test", "displayName": "Synthetic reader", "roles": ["READER"],
+    "emailVerified": true, "enabled": true, "deletedAt": null,
+    "createdAt": "2026-09-19T00:00:00Z", "lastLoginAt": null, "version": 0,
+    "rolesManagedLocally": true
+  },
+  "registration": {
+    "email": "reader@example.test", "displayName": "Synthetic reader", "password": "fixture-password-123"
+  },
+  "profileUpdate": {"displayName": "Updated reader", "newsletterFrequency": "weekly", "expectedVersion": 0},
+  "roleChange": {"roles": ["READER", "EDITOR"], "expectedVersion": 0, "confirmation": "reader@example.test"},
+  "fallbackRequest": {"altText": "Original neutral illustration.", "reason": "Editorially selected fallback.", "expectedVersion": 4},
+  "invalidContentExamples": [
+    {"name": "unsupported-version", "value": {"version": 2, "blocks": [{"type": "paragraph", "text": "Text"}]}},
+    {"name": "string-version", "value": {"version": "1", "blocks": [{"type": "paragraph", "text": "Text"}]}},
+    {"name": "missing-version", "value": {"blocks": [{"type": "paragraph", "text": "Text"}]}},
+    {"name": "empty-blocks", "value": {"version": 1, "blocks": []}},
+    {"name": "null-block", "value": {"version": 1, "blocks": [null]}},
+    {"name": "unknown-block-type", "value": {"version": 1, "blocks": [{"type": "html", "text": "Text"}]}},
+    {"name": "unknown-block-field-even-null", "value": {"version": 1, "blocks": [{"type": "paragraph", "text": "Text", "html": null}]}},
+    {"name": "paragraph-with-items", "value": {"version": 1, "blocks": [{"type": "paragraph", "text": "Text", "items": ["Item"]}]}},
+    {"name": "paragraph-with-url", "value": {"version": 1, "blocks": [{"type": "paragraph", "text": "Text", "url": "https://example.test"}]}},
+    {"name": "blank-text", "value": {"version": 1, "blocks": [{"type": "paragraph", "text": " \t "}]}},
+    {"name": "null-text", "value": {"version": 1, "blocks": [{"type": "paragraph", "text": null}]}},
+    {"name": "empty-list", "value": {"version": 1, "blocks": [{"type": "ordered_list", "items": []}]}},
+    {"name": "blank-item", "value": {"version": 1, "blocks": [{"type": "unordered_list", "items": [" "]}]}},
+    {"name": "list-with-text", "value": {"version": 1, "blocks": [{"type": "unordered_list", "items": ["Item"], "text": "Text"}]}},
+    {"name": "script-link", "value": {"version": 1, "blocks": [{"type": "link", "text": "Source", "url": "javascript:alert(1)"}]}},
+    {"name": "relative-link", "value": {"version": 1, "blocks": [{"type": "link", "text": "Source", "url": "/relative"}]}},
+    {"name": "link-userinfo", "value": {"version": 1, "blocks": [{"type": "link", "text": "Source", "url": "https://reader:password@example.test"}]}},
+    {"name": "link-space", "value": {"version": 1, "blocks": [{"type": "link", "text": "Source", "url": "https://example.test/a b"}]}},
+    {"name": "link-control", "value": {"version": 1, "blocks": [{"type": "link", "text": "Source", "url": "https://example.test/%0a"}]}},
+    {"name": "link-backslash", "value": {"version": 1, "blocks": [{"type": "link", "text": "Source", "url": "https://example.test\\other"}]}},
+    {"name": "link-no-host", "value": {"version": 1, "blocks": [{"type": "link", "text": "Source", "url": "https:///path"}]}}
+  ]
+}

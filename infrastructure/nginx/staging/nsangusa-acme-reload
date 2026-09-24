@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+if [ "${RENEWED_LINEAGE:-}" != /etc/nsangusa-acme/live/staging.nsangusa.com ] \
+    || [ "${RENEWED_DOMAINS:-}" != staging.nsangusa.com ]; then
+    printf 'Refusing certificate reload for an unexpected lineage or domain\n' >&2
+    exit 1
+fi
+
+/usr/bin/openssl x509 -in "$RENEWED_LINEAGE/cert.pem" -noout \
+    -checkhost staging.nsangusa.com
+/usr/bin/openssl x509 -in "$RENEWED_LINEAGE/cert.pem" -noout -checkend 604800
+/usr/sbin/nginx -t
+/usr/bin/systemctl reload nginx.service

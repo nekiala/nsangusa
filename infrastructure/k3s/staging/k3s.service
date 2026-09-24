@@ -1,0 +1,29 @@
+[Unit]
+Description=Nsangusa staging Kubernetes (k3s)
+Documentation=https://docs.k3s.io/
+Wants=network-online.target
+Requires=nsangusa-k3s-guard.service
+After=network-online.target docker.service nsangusa-k3s-guard.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=notify
+User=root
+ExecStart=/usr/local/bin/k3s server --config /etc/rancher/k3s/config.yaml
+KillMode=process
+Delegate=yes
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=0
+TasksMax=infinity
+TimeoutStartSec=180
+Restart=on-failure
+RestartSec=10
+MemoryAccounting=yes
+MemoryHigh=3G
+MemoryMax=4G
+CPUQuota=400%
+
+[Install]
+WantedBy=multi-user.target

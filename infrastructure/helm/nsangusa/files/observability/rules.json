@@ -1,0 +1,140 @@
+{
+  "groups": [
+    {
+      "name": "nsangusa-operational",
+      "interval": "30s",
+      "rules": [
+        {
+          "record": "nsangusa:public_requests:rate5m",
+          "expr": "sum by (namespace, job) (rate(http_server_requests_seconds_count{job=\"nsangusa-backend\",method=\"GET\",uri=~\"/api/v1/articles.*\"}[5m]))"
+        },
+        {
+          "record": "nsangusa:public_requests:rate1h",
+          "expr": "sum by (namespace, job) (rate(http_server_requests_seconds_count{job=\"nsangusa-backend\",method=\"GET\",uri=~\"/api/v1/articles.*\"}[1h]))"
+        },
+        {
+          "record": "nsangusa:public_requests:rate30m",
+          "expr": "sum by (namespace, job) (rate(http_server_requests_seconds_count{job=\"nsangusa-backend\",method=\"GET\",uri=~\"/api/v1/articles.*\"}[30m]))"
+        },
+        {
+          "record": "nsangusa:public_requests:rate6h",
+          "expr": "sum by (namespace, job) (rate(http_server_requests_seconds_count{job=\"nsangusa-backend\",method=\"GET\",uri=~\"/api/v1/articles.*\"}[6h]))"
+        },
+        {
+          "record": "nsangusa:public_errors:ratio5m",
+          "expr": "(sum by (namespace, job) (rate(http_server_requests_seconds_count{job=\"nsangusa-backend\",method=\"GET\",uri=~\"/api/v1/articles.*\",status=~\"5..\"}[5m])) or 0 * nsangusa:public_requests:rate5m) / nsangusa:public_requests:rate5m"
+        },
+        {
+          "record": "nsangusa:public_errors:ratio1h",
+          "expr": "(sum by (namespace, job) (rate(http_server_requests_seconds_count{job=\"nsangusa-backend\",method=\"GET\",uri=~\"/api/v1/articles.*\",status=~\"5..\"}[1h])) or 0 * nsangusa:public_requests:rate1h) / nsangusa:public_requests:rate1h"
+        },
+        {
+          "record": "nsangusa:public_errors:ratio30m",
+          "expr": "(sum by (namespace, job) (rate(http_server_requests_seconds_count{job=\"nsangusa-backend\",method=\"GET\",uri=~\"/api/v1/articles.*\",status=~\"5..\"}[30m])) or 0 * nsangusa:public_requests:rate30m) / nsangusa:public_requests:rate30m"
+        },
+        {
+          "record": "nsangusa:public_errors:ratio6h",
+          "expr": "(sum by (namespace, job) (rate(http_server_requests_seconds_count{job=\"nsangusa-backend\",method=\"GET\",uri=~\"/api/v1/articles.*\",status=~\"5..\"}[6h])) or 0 * nsangusa:public_requests:rate6h) / nsangusa:public_requests:rate6h"
+        },
+        {
+          "alert": "NsangusaMetricsUnavailable",
+          "expr": "up{job=\"nsangusa-backend\"} == 0 or absent(up{job=\"nsangusa-backend\"})",
+          "for": "2m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "Backend metrics cannot be scraped", "runbook_url": "docs/reliability-operations.md#monitoring-and-alert-response"}
+        },
+        {
+          "alert": "NsangusaInventoryStale",
+          "expr": "news_operations_collection_success{job=\"nsangusa-backend\"} == 0 or (time() - news_operations_snapshot_timestamp_seconds{job=\"nsangusa-backend\"}) > 120 or absent(news_operations_snapshot_timestamp_seconds{job=\"nsangusa-backend\"})",
+          "for": "2m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "Operational database inventory is missing or stale; do not trust backlog gauges", "runbook_url": "docs/reliability-operations.md#monitoring-and-alert-response"}
+        },
+        {
+          "alert": "NsangusaPublicFastBurn",
+          "expr": "nsangusa:public_errors:ratio5m > 0.0144 and nsangusa:public_errors:ratio1h > 0.0144 and nsangusa:public_requests:rate5m > 0",
+          "for": "2m",
+          "labels": {"severity": "critical", "qualification": "provisional"},
+          "annotations": {"summary": "Public article reads exceed provisional 14.4x error-budget burn", "runbook_url": "docs/reliability-operations.md#monitoring-and-alert-response"}
+        },
+        {
+          "alert": "NsangusaPublicSlowBurn",
+          "expr": "nsangusa:public_errors:ratio30m > 0.006 and nsangusa:public_errors:ratio6h > 0.006 and nsangusa:public_requests:rate5m > 0",
+          "for": "15m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "Public article reads exceed provisional 6x error-budget burn", "runbook_url": "docs/reliability-operations.md#monitoring-and-alert-response"}
+        },
+        {
+          "alert": "NsangusaPublicReadLatency",
+          "expr": "histogram_quantile(0.95, sum by (namespace, job, le) (rate(http_server_requests_seconds_bucket{job=\"nsangusa-backend\",method=\"GET\",uri=~\"/api/v1/articles.*\"}[5m]))) > 0.4",
+          "for": "10m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "Public article p95 exceeds provisional 400 ms target", "runbook_url": "docs/reliability-operations.md#monitoring-and-alert-response"}
+        },
+        {
+          "alert": "NsangusaOutboxDelayed",
+          "expr": "max by (namespace, job) (news_operations_outbox_oldest_age_seconds{job=\"nsangusa-backend\"}) > 60",
+          "for": "5m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "Committed outbox work is older than 60 seconds", "runbook_url": "docs/reliability-operations.md#outbox-lag-or-kafka-outage"}
+        },
+        {
+          "alert": "NsangusaPublicationDelayed",
+          "expr": "max by (namespace, job) (news_operations_publication_oldest_age_seconds{job=\"nsangusa-backend\"}) > 120 or max by (namespace, job) (news_operations_publication_failed{job=\"nsangusa-backend\"}) > 0",
+          "for": "5m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "Scheduled publication is late or failed", "runbook_url": "docs/reliability-operations.md#editorial-cutover-and-failed-schedules"}
+        },
+        {
+          "alert": "NsangusaIngestionDegraded",
+          "expr": "max by (namespace, job) (news_operations_ingestion_failed_accounts{job=\"nsangusa-backend\"}) > 0 or max by (namespace, job) (news_operations_ingestion_never_synced_accounts{job=\"nsangusa-backend\"}) > 0",
+          "for": "15m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "Enabled X accounts fail polling or have never completed a poll", "runbook_url": "docs/reliability-operations.md#x-ingestion-delayed"}
+        },
+        {
+          "alert": "NsangusaAiWorkflowDelayed",
+          "expr": "max by (namespace, job) (news_operations_ai_oldest_age_seconds{job=\"nsangusa-backend\"}) > 600",
+          "for": "5m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "Pending AI requests exceed the provisional ten-minute target", "runbook_url": "docs/reliability-operations.md#aiimage-provider-outage-or-compromise"}
+        },
+        {
+          "alert": "NsangusaXRateLimited",
+          "expr": "max by (namespace, job) (news_operations_ingestion_rate_limited_accounts{job=\"nsangusa-backend\"}) > 0",
+          "for": "15m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "X accounts remain rate-limited; honor reset time and check approved plan limits", "runbook_url": "docs/reliability-operations.md#x-ingestion-delayed"}
+        },
+        {
+          "alert": "NsangusaAiProviderErrors",
+          "expr": "sum by (namespace, job, operation, outcome) (increase(news_ai_provider_calls_total{job=\"nsangusa-backend\",outcome!=\"success\"}[5m])) > 0",
+          "for": "2m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "AI provider calls fail or are refused; inspect bounded retry/circuit/quota outcomes", "runbook_url": "docs/reliability-operations.md#aiimage-provider-outage-or-compromise"}
+        },
+        {
+          "alert": "NsangusaDatabasePoolSaturated",
+          "expr": "hikaricp_connections_pending{job=\"nsangusa-backend\"} > 0 and hikaricp_connections_active{job=\"nsangusa-backend\"} / hikaricp_connections_max{job=\"nsangusa-backend\"} > 0.9",
+          "for": "5m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "Database pool has queued borrowers and is above 90% utilization", "runbook_url": "docs/reliability-operations.md#monitoring-and-alert-response"}
+        },
+        {
+          "alert": "NsangusaNewsletterReconciliation",
+          "expr": "max by (namespace, job) (news_operations_newsletter_reconciliation{job=\"nsangusa-backend\"}) > 0",
+          "for": "5m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "Newsletter deliveries require operator reconciliation; never reset them to pending", "runbook_url": "docs/reliability-operations.md#newsletter-reconciliation"}
+        },
+        {
+          "alert": "NsangusaDeadLettersPending",
+          "expr": "max by (namespace, job) (news_operations_failures_pending{job=\"nsangusa-backend\"}) > 0",
+          "for": "15m",
+          "labels": {"severity": "warning", "qualification": "provisional"},
+          "annotations": {"summary": "Failed event inventory needs bounded review, not automatic replay", "runbook_url": "docs/reliability-operations.md#dlt-growthreplay"}
+        }
+      ]
+    }
+  ]
+}

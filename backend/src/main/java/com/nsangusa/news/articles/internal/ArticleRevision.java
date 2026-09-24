@@ -39,6 +39,14 @@ class ArticleRevision {
   @Column(nullable = false)
   Instant createdAt;
 
+  @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+  @Column(columnDefinition = "jsonb")
+  com.nsangusa.news.integration.NewsEvents.ArticleDraftGenerated aiGenerationResult;
+
+  @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+  @Column(columnDefinition = "jsonb")
+  com.nsangusa.news.articles.ArticleService.RevisionSnapshot snapshot;
+
   protected ArticleRevision() {}
 
   ArticleRevision(

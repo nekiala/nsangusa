@@ -59,6 +59,13 @@ class UserAccount {
 
   Instant lastLoginAt;
 
+  Instant authenticationValidAfter;
+
+  Instant profileUpdatedAt;
+
+  @Column(nullable = false)
+  boolean rolesManagedLocally;
+
   @Version long version;
 
   @ElementCollection(fetch = FetchType.EAGER)
@@ -105,15 +112,26 @@ class UserAccount {
   void changePassword(String passwordHash) {
     this.passwordHash = passwordHash;
     this.localCredentialsEnabled = true;
+    this.authenticationValidAfter = Instant.now();
     clearLoginFailures();
   }
 
   void updateProfile(String displayName) {
     this.displayName = displayName;
+    this.profileUpdatedAt = Instant.now();
   }
 
   void addRoles(Set<Role> roles) {
+    if (!rolesManagedLocally) {
+      this.roles.addAll(roles);
+    }
+  }
+
+  void replaceRoles(Set<Role> roles) {
+    this.roles.clear();
     this.roles.addAll(roles);
+    this.rolesManagedLocally = true;
+    this.authenticationValidAfter = Instant.now();
   }
 
   boolean isLocked(Instant now) {
@@ -149,6 +167,7 @@ class UserAccount {
     emailVerified = false;
     enabled = false;
     deletedAt = now;
+    authenticationValidAfter = now;
     roles.clear();
     clearLoginFailures();
   }

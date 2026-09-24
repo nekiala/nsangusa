@@ -39,9 +39,8 @@ spring:
       auto-offset-reset: earliest
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       properties:
-        spring.json.trusted.packages: com.nsangusa.news.integration
         isolation.level: read_committed
     listener:
       ack-mode: record
@@ -51,6 +50,8 @@ spring:
       port: ${REDIS_PORT:6379}
       username: ${REDIS_USERNAME:}
       password: ${REDIS_PASSWORD:}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:2s}
+      timeout: ${REDIS_COMMAND_TIMEOUT:2s}
       ssl:
         enabled: ${REDIS_SSL_ENABLED:false}
   cache:
@@ -62,6 +63,7 @@ spring:
     timeout: 30m
     redis:
       namespace: news:session
+      repository-type: indexed
   mail:
     host: ${MAIL_HOST:localhost}
     port: ${MAIL_PORT:1025}
@@ -97,6 +99,18 @@ management:
       probes:
         enabled: true
       show-details: when_authorized
+      roles: ADMINISTRATOR
+      group:
+        readiness:
+          include: readinessState,db,redis
+        liveness:
+          include: livenessState
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: 400ms,1s
   tracing:
     sampling:
       probability: ${OTEL_TRACES_SAMPLER_ARG:0.1}
@@ -108,19 +122,40 @@ management:
 
 news:
   public-base-url: ${PUBLIC_BASE_URL:http://localhost:3000}
+  operations:
+    internal-metrics-enabled: ${NEWS_OPERATIONS_INTERNAL_METRICS_ENABLED:false}
   providers:
-    mode: ${PROVIDER_MODE:fake}
+    mode: ${PROVIDER_MODE:disabled}
     ai:
+      live-enabled: ${AI_LIVE_ENABLED:false}
+      credential-master-key: ${AI_CREDENTIAL_MASTER_KEY:}
       base-url: ${AI_BASE_URL:https://api.openai.com}
       api-key: ${AI_API_KEY:}
       model: ${AI_MODEL:gpt-5-mini}
+      authorized-models: ${AI_AUTHORIZED_MODELS:${news.providers.ai.model}}
       prompt-version: ${AI_PROMPT_VERSION:editorial-v1}
-      timeout: 20s
+      timeout: ${AI_TIMEOUT:20s}
+      max-request-bytes: ${AI_MAX_REQUEST_BYTES:131072}
+      max-response-bytes: ${AI_MAX_RESPONSE_BYTES:262144}
+      max-output-tokens: ${AI_MAX_OUTPUT_TOKENS:4096}
+      max-requests-per-minute: ${AI_MAX_REQUESTS_PER_MINUTE:60}
+      daily-token-budget: ${AI_DAILY_TOKEN_BUDGET:1000000}
+      max-concurrent-requests: ${AI_MAX_CONCURRENT_REQUESTS:8}
+      max-attempts: ${AI_MAX_ATTEMPTS:3}
+      retry-initial-delay: ${AI_RETRY_INITIAL_DELAY:250ms}
+      retry-max-delay: ${AI_RETRY_MAX_DELAY:2s}
+      circuit-failure-threshold: ${AI_CIRCUIT_FAILURE_THRESHOLD:5}
+      circuit-open-duration: ${AI_CIRCUIT_OPEN_DURATION:30s}
+      input-cost-per-million: ${AI_INPUT_COST_PER_MILLION:0}
+      output-cost-per-million: ${AI_OUTPUT_COST_PER_MILLION:0}
     image:
       base-url: ${IMAGE_BASE_URL:https://api.openai.com}
       api-key: ${IMAGE_API_KEY:${AI_API_KEY:}}
       model: ${IMAGE_MODEL:gpt-image-1}
   storage:
+    provider: ${STORAGE_PROVIDER:s3}
+    local-root: ${LOCAL_MEDIA_ROOT:}
+    server-side-encryption: ${S3_SERVER_SIDE_ENCRYPTION:AES256}
     endpoint: ${S3_ENDPOINT:http://localhost:9000}
     region: ${S3_REGION:us-east-1}
     bucket: ${S3_BUCKET:news-media}
@@ -129,6 +164,18 @@ news:
   publication:
     policy: ${PUBLICATION_POLICY:HUMAN_REVIEW_ALWAYS}
     automatic-confidence-threshold: ${AUTO_PUBLISH_CONFIDENCE:0.95}
+    topic-rules: ${AUTO_PUBLISH_TOPIC_RULES:}
+    approved-source-accounts: ${AUTO_PUBLISH_APPROVED_SOURCE_ACCOUNTS:}
+    schedule-poll-interval: ${PUBLICATION_SCHEDULE_POLL_INTERVAL:10000}
+    schedule-batch-size: ${PUBLICATION_SCHEDULE_BATCH_SIZE:50}
+  story:
+    clustering-window: ${STORY_CLUSTERING_WINDOW:PT6H}
+    similarity-threshold: ${STORY_SIMILARITY_THRESHOLD:0.30}
+    max-sources: ${STORY_MAX_SOURCES:10}
+    quiet-period: ${STORY_QUIET_PERIOD:PT2M}
+    dispatch-interval: ${STORY_DISPATCH_INTERVAL:30000}
+    dispatch-batch-size: ${STORY_DISPATCH_BATCH_SIZE:50}
+    max-source-material-chars: ${STORY_MAX_SOURCE_MATERIAL_CHARS:40000}
   comments:
     enabled: ${COMMENTS_ENABLED:true}
     require-approval: ${COMMENTS_REQUIRE_APPROVAL:true}
@@ -136,9 +183,13 @@ news:
     token-secret: ${NEWSLETTER_TOKEN_SECRET:local-development-secret-change-me}
     webhook-secret: ${NEWSLETTER_WEBHOOK_SECRET:local-development-webhook-secret-change-me}
     from-address: ${NEWSLETTER_FROM_ADDRESS:news@example.invalid}
+    provider: ${NEWSLETTER_PROVIDER:local-smtp}
+    idempotency-window: ${NEWSLETTER_IDEMPOTENCY_WINDOW:PT24H}
+    attempt-lease: ${NEWSLETTER_ATTEMPT_LEASE:PT10M}
   x:
     api-base-url: ${X_API_BASE_URL:https://api.x.com}
     bearer-token: ${X_BEARER_TOKEN:}
+    reconciliation-limit: ${X_RECONCILIATION_LIMIT:100}
   outbox:
     poll-interval: 500
 

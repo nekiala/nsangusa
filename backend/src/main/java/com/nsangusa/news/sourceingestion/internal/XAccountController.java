@@ -34,9 +34,37 @@ import org.springframework.web.bind.annotation.RestController;
 @PreAuthorize("hasRole('ADMINISTRATOR')")
 class XAccountController {
   private final SourceIngestionService service;
+  private final XSourceProvider provider;
+  private final boolean simulationEnabled;
 
-  XAccountController(SourceIngestionService service) {
+  XAccountController(
+      SourceIngestionService service,
+      XSourceProvider provider,
+      @org.springframework.beans.factory.annotation.Value("${news.providers.mode:disabled}")
+          String providerMode) {
     this.service = service;
+    this.provider = provider;
+    this.simulationEnabled = "fake".equals(providerMode);
+  }
+
+  @GetMapping("/capabilities")
+  Capabilities capabilities() {
+    return new Capabilities(simulationEnabled);
+  }
+
+  @GetMapping("/resolve")
+  XSourceProvider.AccountLookup resolve(
+      @RequestParam @Pattern(regexp = "@?[A-Za-z0-9_]{1,15}") String handle) {
+    try {
+      return provider.lookupAccount(handle);
+    } catch (org.springframework.web.client.HttpClientErrorException.TooManyRequests exception) {
+      throw new org.springframework.web.server.ResponseStatusException(
+          HttpStatus.TOO_MANY_REQUESTS,
+          "X account lookup is rate limited; retry after the provider reset");
+    } catch (org.springframework.web.client.HttpClientErrorException.NotFound exception) {
+      throw new org.springframework.web.server.ResponseStatusException(
+          HttpStatus.NOT_FOUND, "X account was not found");
+    }
   }
 
   @GetMapping
@@ -95,6 +123,10 @@ class XAccountController {
   @PostMapping("/{id}/simulate-post")
   ResponseEntity<IdResponse> simulate(
       @PathVariable UUID id, @Valid @RequestBody SimulatedPostRequest request) {
+    if (!simulationEnabled) {
+      throw new org.springframework.web.server.ResponseStatusException(
+          HttpStatus.FORBIDDEN, "Post simulation is available only with fake providers");
+    }
     UUID sourceId =
         service.discoverPost(
             id,
@@ -129,6 +161,8 @@ class XAccountController {
       @NotNull Instant publishedAt) {}
 
   record IdResponse(UUID id) {}
+
+  record Capabilities(boolean simulationEnabled) {}
 
   static UUID actorId(Principal principal) {
     return UUID.nameUUIDFromBytes(principal.getName().getBytes(StandardCharsets.UTF_8));
@@ -179,6 +213,7 @@ class SourceComplianceController {
   }
 
   @GetMapping
+  @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
   List<SourceIngestionService.SourceSummary> list(
       @RequestParam(required = false) String accountId,
       @RequestParam(required = false) String status,
@@ -187,6 +222,7 @@ class SourceComplianceController {
   }
 
   @GetMapping("/{id}")
+  @PreAuthorize("hasAnyRole('EDITOR','ADMINISTRATOR')")
   SourceIngestionService.SourceView get(@PathVariable UUID id) {
     return service.getSource(id);
   }

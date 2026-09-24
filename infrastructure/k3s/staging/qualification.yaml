@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nsangusa-k3s-qualification
+  labels:
+    qualification.nsangusa.io/owner: k3s-bootstrap
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.36
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bootstrap-probes
+  namespace: nsangusa-k3s-qualification
+data:
+  probe.cjs: |
+    const assert = require("node:assert/strict");
+    const dns = require("node:dns").promises;
+    const fs = require("node:fs");
+    const http = require("node:http");
+    const https = require("node:https");
+    function request(url, options = {}) {
+      return new Promise((resolve, reject) => {
+        const client = url.startsWith("https:") ? https : http;
+        const req = client.get(url, options, (response) => {
+          let body = "";
+          response.setEncoding("utf8");
+          response.on("data", (part) => { body += part; });
+          response.on("end", () => resolve({ status: response.statusCode, body }));
+          response.on("error", reject);
+        });
+        req.setTimeout(3000, () => req.destroy(new Error("request timed out")));
+        req.on("error", reject);
+      });
+    }
+    async function main() {
+      const [mode, target] = process.argv.slice(2);
+      if (mode === "discovery") {
+        const records = await dns.resolve4("kubernetes.default.svc.cluster.local");
+        assert.deepEqual(records, ["10.43.0.1"]);
+        assert.ok((await dns.resolve4("example.com")).length > 0);
+        const mount = "/var/run/secrets/kubernetes.io/serviceaccount/";
+        const response = await request("https://kubernetes.default.svc/version", {
+          ca: fs.readFileSync(mount + "ca.crt"),
+          headers: { Authorization: "Bearer " + fs.readFileSync(mount + "token", "utf8").trim() },
+        });
+        assert.equal(response.status, 200);
+        assert.match(JSON.parse(response.body).gitVersion, /^v1\.36\.4/);
+        console.log("Cluster/external DNS and CA-verified in-cluster API access passed.");
+        return;
+      }
+      if (mode === "allow") {
+        const response = await request(target);
+        assert.equal(response.status, 200);
+        assert.equal(response.body, "nsangusa-k3s-probe\n");
+        console.log("Expected direct pod connection passed.");
+        return;
+      }
+      if (mode === "deny") {
+        await assert.rejects(request(target), /request timed out|ECONNREFUSED|EHOSTUNREACH/);
+        console.log("Expected NetworkPolicy denial passed.");
+        return;
+      }
+      throw new Error("Unknown probe mode");
+    }
+    main().catch((error) => {
+      console.error(error.message);
+      process.exitCode = 1;
+    });
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: server
+  namespace: nsangusa-k3s-qualification
+  labels:
+    app: qualification-server
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: server
+      image: gcr.io/distroless/nodejs24-debian13:nonroot@sha256:bb6b03d81066993293a10feda7250e8e1cc034035fe9b61cfceededa7c8bf04d
+      args:
+        - -e
+        - require("node:http").createServer((req,res)=>res.end("nsangusa-k3s-probe\n")).listen(8080,"0.0.0.0")
+      ports:
+        - name: http
+          containerPort: 8080
+      readinessProbe:
+        httpGet:
+          port: http
+          path: /
+        periodSeconds: 2
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client
+  namespace: nsangusa-k3s-qualification
+  labels:
+    app: qualification-client
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: client
+      image: gcr.io/distroless/nodejs24-debian13:nonroot@sha256:bb6b03d81066993293a10feda7250e8e1cc034035fe9b61cfceededa7c8bf04d
+      args: [-e, "setInterval(()=>{},60000)"]
+      volumeMounts:
+        - name: probes
+          mountPath: /probes
+          readOnly: true
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+  volumes:
+    - name: probes
+      configMap:
+        name: bootstrap-probes
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loopback-probe
+  namespace: nsangusa-k3s-qualification
+spec:
+  type: NodePort
+  selector:
+    app: qualification-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30080

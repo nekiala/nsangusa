@@ -3,7 +3,6 @@ package com.nsangusa.news.newsletter.internal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nsangusa.news.articles.ArticleService;
 import com.nsangusa.news.articles.ArticleState;
 import com.nsangusa.news.eventprocessing.DurableEventPublisher;
@@ -17,6 +16,8 @@ import com.nsangusa.news.integration.NewsEvents.XPostDiscovered;
 import com.nsangusa.news.media.MediaService;
 import com.nsangusa.news.media.ObjectStorage;
 import com.nsangusa.news.sourceingestion.SourceIngestionService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import java.time.Instant;
@@ -37,6 +38,7 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -50,17 +52,19 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Testcontainers(disabledWithoutDocker = true)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
+@ActiveProfiles("test")
 class EditorialPublicationWorkflowIntegrationTests {
   private static final String COMPONENT_PATTERN =
       "com\\.nsangusa\\.news\\."
           + "(eventprocessing\\.internal\\.(JpaEventStore|JacksonIncomingEventReader)"
+          + "|integration\\.internal\\.EventJsonConfiguration"
           + "|sourceingestion\\.internal\\.(SourceIngestionApplicationService|SourceNormalizationConsumer)"
-          + "|storyprocessing\\.internal\\.StoryCandidateConsumer"
-          + "|aieditorial\\.internal\\.(EditorialWorkflowConsumer|FakeEditorialProvider)"
+          + "|storyprocessing\\.internal\\.(StoryCandidateConsumer|StoryAnalysisScheduler|StoryStatusConsumer|StoryClusterLock)"
+          + "|aieditorial\\.internal\\.(EditorialWorkflowConsumer|FakeEditorialProvider|AiUsageMetrics|AiRequestAuditService|EditorialSemanticValidator|AiProviderCallExecutor|AiAdministrationApplicationService|DeployedEditorialCatalog)"
           + "|articles\\.internal\\.(ArticleEventConsumer|ArticleApplicationService)"
           + "|media\\.internal\\.(ImageWorkflowConsumer|ImageVariantProcessor|MediaApplicationService|FakeImageGenerationProvider)"
           + "|audit\\.internal\\.AuditApplicationService"
-          + "|publication\\.internal\\.PublicationConsumer"
+          + "|publication\\.internal\\.(PublicationConsumer|PublicationPolicyEvaluator)"
           + "|newsletter\\.internal\\.(NewsletterWorkflowConsumer|NewsletterDeliveryReservationService|UnsubscribeTokenService))";
 
   @Container
@@ -77,6 +81,7 @@ class EditorialPublicationWorkflowIntegrationTests {
     registry.add("spring.datasource.password", POSTGRES::getPassword);
     registry.add("news.providers.mode", () -> "fake");
     registry.add("news.publication.policy", () -> "HUMAN_REVIEW_ALWAYS");
+    registry.add("news.story.quiet-period", () -> "PT0S");
     registry.add(
         "news.newsletter.token-secret",
         () -> "workflow-test-secret-that-is-at-least-32-characters");
@@ -116,10 +121,14 @@ class EditorialPublicationWorkflowIntegrationTests {
         ingestion.discoverPost(
             accountId,
             "1963526500000000001",
-            "https://x.com/NsangusaNews/status/1963526500000000001",
+            "https://x.com/NsangusaNews/status/1963526500000000001?s=20&t=shared#replies",
             "  World\u0000 update from a monitored account #World  ",
             publishedAt);
     var discovered = envelope("XPostDiscovered", XPostDiscovered.class);
+    assertThat(ingestion.getSource(sourceId).canonicalUrl())
+        .isEqualTo("https://x.com/NsangusaNews/status/1963526500000000001");
+    assertThat(discovered.payload().canonicalUrl())
+        .isEqualTo("https://x.com/NsangusaNews/status/1963526500000000001");
     assertThat(discovered.aggregateId()).isEqualTo(sourceId);
     assertThat(discovered.correlationId()).isEqualTo(sourceId);
     assertThat(discovered.causationId()).isNull();
@@ -147,6 +156,7 @@ class EditorialPublicationWorkflowIntegrationTests {
         "com.nsangusa.news.storyprocessing.internal.StoryCandidateConsumer",
         "consume",
         normalizedJson);
+    invoke("com.nsangusa.news.storyprocessing.internal.StoryAnalysisScheduler", "dispatchReady");
     var analysisRequestedJson = json("StoryAnalysisRequested");
     var analysisRequested = envelope("StoryAnalysisRequested", Object.class);
     assertThat(analysisRequested.causationId()).isEqualTo(normalized.eventId());
@@ -198,13 +208,20 @@ class EditorialPublicationWorkflowIntegrationTests {
 
     consume(
         "com.nsangusa.news.articles.internal.ArticleEventConsumer",
-        "images",
-        json("ArticleImageGenerated"));
-    assertThat(articles.get(articleId).state()).isEqualTo(ArticleState.AWAITING_REVIEW);
-    assertThat(countEvents("ArticleReadyForReview")).isEqualTo(1);
+        "imageCandidates",
+        json("ArticleImageCandidateGenerated"));
+    assertThat(articles.get(articleId).state()).isEqualTo(ArticleState.DRAFTING);
+    assertThat(countEvents("ArticleReadyForReview")).isZero();
 
     UUID editorId = UUID.fromString("07d50f10-f9d9-44de-86dd-b4037658d1e8");
     media.approve(media.generations(articleId).getFirst().id(), editorId);
+    assertThat(articles.get(articleId).state()).isEqualTo(ArticleState.DRAFTING);
+    consume(
+        "com.nsangusa.news.articles.internal.ArticleEventConsumer",
+        "approvedImages",
+        json("ArticleImageApproved"));
+    assertThat(articles.get(articleId).state()).isEqualTo(ArticleState.AWAITING_REVIEW);
+    assertThat(countEvents("ArticleReadyForReview")).isEqualTo(1);
     assertThatThrownBy(() -> articles.publish(articleId, editorId, articleId, null))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("must be approved or scheduled");
@@ -348,6 +365,15 @@ class EditorialPublicationWorkflowIntegrationTests {
     }
   }
 
+  private void invoke(String className, String method) {
+    try {
+      Object component = context.getBean(Class.forName(className));
+      ReflectionTestUtils.invokeMethod(component, method);
+    } catch (ClassNotFoundException exception) {
+      throw new IllegalStateException(exception);
+    }
+  }
+
   private String json(String eventType) {
     return jdbc.queryForObject(
         "select envelope_json from outbox_events where event_type = ? order by created_at desc limit 1",
@@ -381,13 +407,13 @@ class EditorialPublicationWorkflowIntegrationTests {
       includeFilters = @ComponentScan.Filter(type = FilterType.REGEX, pattern = COMPONENT_PATTERN))
   static class WorkflowConfiguration {
     @Bean
-    ObjectMapper objectMapper() {
-      return new ObjectMapper().findAndRegisterModules();
+    Validator validator() {
+      return Validation.buildDefaultValidatorFactory().getValidator();
     }
 
     @Bean
-    Validator validator() {
-      return Validation.buildDefaultValidatorFactory().getValidator();
+    MeterRegistry meterRegistry() {
+      return new SimpleMeterRegistry();
     }
 
     @Bean
@@ -421,16 +447,25 @@ class EditorialPublicationWorkflowIntegrationTests {
   }
 
   static final class InMemoryObjectStorage implements ObjectStorage {
-    private final ConcurrentHashMap<String, byte[]> objects = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ObjectStorage.StoredObject> objects =
+        new ConcurrentHashMap<>();
 
     @Override
     public void put(String objectKey, byte[] bytes, String contentType) {
-      objects.put(objectKey, bytes.clone());
+      objects.put(objectKey, new ObjectStorage.StoredObject(bytes.clone(), contentType));
     }
 
     @Override
     public void delete(String objectKey) {
       objects.remove(objectKey);
+    }
+
+    @Override
+    public java.util.Optional<ObjectStorage.StoredObject> read(String objectKey) {
+      return java.util.Optional.ofNullable(objects.get(objectKey))
+          .map(
+              stored ->
+                  new ObjectStorage.StoredObject(stored.bytes().clone(), stored.contentType()));
     }
 
     Set<String> keys() {
@@ -440,16 +475,28 @@ class EditorialPublicationWorkflowIntegrationTests {
 
   static final class RecordingEmailDeliveryProvider implements EmailDeliveryProvider {
     private final List<String> recipients = new ArrayList<>();
+    private final java.util.Map<String, String> accepted = new java.util.HashMap<>();
     private boolean failNextAfterAcceptance;
 
     @Override
-    public String send(String recipient, String subject, String text, String html) {
+    public boolean supportsIdempotency() {
+      return true;
+    }
+
+    @Override
+    public String send(
+        String idempotencyKey, String recipient, String subject, String text, String html) {
+      if (accepted.containsKey(idempotencyKey)) {
+        return accepted.get(idempotencyKey);
+      }
       recipients.add(recipient);
+      String messageId = "message-" + recipients.size();
+      accepted.put(idempotencyKey, messageId);
       if (failNextAfterAcceptance) {
         failNextAfterAcceptance = false;
         throw new IllegalStateException("response lost after provider acceptance");
       }
-      return "message-" + recipients.size();
+      return messageId;
     }
 
     void failNextAfterAcceptance() {

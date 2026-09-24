@@ -16,3 +16,10 @@ logging:
 news:
   providers:
     mode: fake
+  storage:
+    server-side-encryption: ${S3_SERVER_SIDE_ENCRYPTION:none}
+  story:
+    quiet-period: ${STORY_QUIET_PERIOD:PT3S}
+    dispatch-interval: ${STORY_DISPATCH_INTERVAL:1000}
+  local:
+    seed: ${LOCAL_SEED:true}

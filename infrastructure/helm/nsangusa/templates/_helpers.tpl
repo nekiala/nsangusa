@@ -42,6 +42,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{- define "nsangusa.validate" -}}
+{{- range $name := list "AI_CREDENTIAL_MASTER_KEY" "AI_API_KEY" "IMAGE_API_KEY" -}}
+{{- if or (hasKey $.Values.backendConfig $name) (hasKey $.Values.frontendConfig $name) -}}
+{{- fail (printf "%s must use a runtime Secret reference, never a ConfigMap" $name) -}}
+{{- end -}}
+{{- end -}}
+{{- range $name, $_ := .Values.secret.env -}}
+{{- if or (hasKey $.Values.backendConfig $name) (hasKey $.Values.frontendConfig $name) -}}
+{{- fail (printf "secret.env.%s must not also appear in a ConfigMap" $name) -}}
+{{- end -}}
+{{- end -}}
+{{- if and (eq (.Values.backendConfig.AI_LIVE_ENABLED | toString) "true") (not (get .Values.secret.env "AI_CREDENTIAL_MASTER_KEY")) -}}
+{{- fail "live AI configuration requires secret.env.AI_CREDENTIAL_MASTER_KEY" -}}
+{{- end -}}
 {{- if and (gt (len .Values.secret.env) 0) (not .Values.secret.existingSecret) -}}
 {{- fail "secret.existingSecret is required when secret.env references keys" -}}
 {{- end -}}
@@ -101,7 +114,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- fail (printf "backendConfig.%s must be configured for production" $key) -}}
 {{- end -}}
 {{- end -}}
-{{- range $name := list "DATABASE_USERNAME" "DATABASE_PASSWORD" "KAFKA_SASL_JAAS_CONFIG" "REDIS_PASSWORD" "MAIL_PASSWORD" "AI_API_KEY" "IMAGE_API_KEY" "S3_ACCESS_KEY" "S3_SECRET_KEY" "X_BEARER_TOKEN" "NEWSLETTER_TOKEN_SECRET" "NEWSLETTER_WEBHOOK_SECRET" "OIDC_CLIENT_SECRET" -}}
+{{- if ne (.Values.backendConfig.AI_LIVE_ENABLED | toString) "true" -}}
+{{- fail "backendConfig.AI_LIVE_ENABLED must be true in production" -}}
+{{- end -}}
+{{- range $name := list "DATABASE_USERNAME" "DATABASE_PASSWORD" "KAFKA_SASL_JAAS_CONFIG" "REDIS_PASSWORD" "MAIL_PASSWORD" "AI_CREDENTIAL_MASTER_KEY" "IMAGE_API_KEY" "S3_ACCESS_KEY" "S3_SECRET_KEY" "X_BEARER_TOKEN" "NEWSLETTER_TOKEN_SECRET" "NEWSLETTER_WEBHOOK_SECRET" "OIDC_CLIENT_SECRET" -}}
 {{- if not (get $.Values.secret.env $name) -}}
 {{- fail (printf "secret.env.%s must reference a key in secret.existingSecret for production" $name) -}}
 {{- end -}}

@@ -1,0 +1,88 @@
+{
+  "rule_files": ["../helm/nsangusa/files/observability/rules.json"],
+  "evaluation_interval": "1m",
+  "tests": [
+    {
+      "name": "successful traffic without any error series is explicitly healthy",
+      "interval": "1m",
+      "input_series": [
+        {"series": "http_server_requests_seconds_count{job=\"nsangusa-backend\",namespace=\"drill\",method=\"GET\",uri=\"/api/v1/articles\",status=\"200\"}", "values": "0+100x120"}
+      ],
+      "promql_expr_test": [
+        {"expr": "nsangusa:public_errors:ratio5m", "eval_time": "60m",
+         "exp_samples": [{"labels": "nsangusa:public_errors:ratio5m{job=\"nsangusa-backend\",namespace=\"drill\"}", "value": 0}]}
+      ],
+      "alert_rule_test": [{"eval_time": "60m", "alertname": "NsangusaPublicFastBurn", "exp_alerts": []}]
+    },
+    {
+      "name": "outbox sustained delay fires and recovery resolves",
+      "interval": "1m",
+      "input_series": [
+        {"series": "news_operations_outbox_oldest_age_seconds{job=\"nsangusa-backend\",namespace=\"drill\",instance=\"one\"}", "values": "90+0x9 0+0x5"},
+        {"series": "up{job=\"nsangusa-backend\",namespace=\"drill\",instance=\"one\"}", "values": "1+0x15"}
+      ],
+      "alert_rule_test": [
+        {"eval_time": "4m", "alertname": "NsangusaOutboxDelayed", "exp_alerts": []},
+        {"eval_time": "6m", "alertname": "NsangusaOutboxDelayed", "exp_alerts": [
+          {"exp_labels": {"job": "nsangusa-backend", "namespace": "drill", "severity": "warning", "qualification": "provisional"},
+           "exp_annotations": {"summary": "Committed outbox work is older than 60 seconds", "runbook_url": "docs/reliability-operations.md#outbox-lag-or-kafka-outage"}}
+        ]},
+        {"eval_time": "12m", "alertname": "NsangusaOutboxDelayed", "exp_alerts": []}
+      ]
+    },
+    {
+      "name": "replica gauges are not added together",
+      "interval": "1m",
+      "input_series": [
+        {"series": "news_operations_outbox_oldest_age_seconds{job=\"nsangusa-backend\",namespace=\"drill\",instance=\"one\"}", "values": "40+0x10"},
+        {"series": "news_operations_outbox_oldest_age_seconds{job=\"nsangusa-backend\",namespace=\"drill\",instance=\"two\"}", "values": "40+0x10"}
+      ],
+      "alert_rule_test": [{"eval_time": "10m", "alertname": "NsangusaOutboxDelayed", "exp_alerts": []}]
+    },
+    {
+      "name": "sustained public errors burn provisional budget",
+      "interval": "1m",
+      "input_series": [
+        {"series": "http_server_requests_seconds_count{job=\"nsangusa-backend\",namespace=\"drill\",method=\"GET\",uri=\"/api/v1/articles\",status=\"200\"}", "values": "0+100x120"},
+        {"series": "http_server_requests_seconds_count{job=\"nsangusa-backend\",namespace=\"drill\",method=\"GET\",uri=\"/api/v1/articles\",status=\"500\"}", "values": "0+5x120"}
+      ],
+      "alert_rule_test": [{"eval_time": "60m", "alertname": "NsangusaPublicFastBurn", "exp_alerts": [
+        {"exp_labels": {"job": "nsangusa-backend", "namespace": "drill", "severity": "critical", "qualification": "provisional"},
+         "exp_annotations": {"summary": "Public article reads exceed provisional 14.4x error-budget burn", "runbook_url": "docs/reliability-operations.md#monitoring-and-alert-response"}}
+      ]}]
+    },
+    {
+      "name": "no traffic is not an availability burn",
+      "interval": "1m",
+      "input_series": [
+        {"series": "http_server_requests_seconds_count{job=\"nsangusa-backend\",namespace=\"drill\",method=\"GET\",uri=\"/api/v1/articles\",status=\"200\"}", "values": "0+0x120"},
+        {"series": "http_server_requests_seconds_count{job=\"nsangusa-backend\",namespace=\"drill\",method=\"GET\",uri=\"/api/v1/articles\",status=\"500\"}", "values": "0+0x120"}
+      ],
+      "alert_rule_test": [
+        {"eval_time": "60m", "alertname": "NsangusaPublicFastBurn", "exp_alerts": []},
+        {"eval_time": "60m", "alertname": "NsangusaPublicSlowBurn", "exp_alerts": []}
+      ]
+    },
+    {
+      "name": "missing scraper cannot silently pass",
+      "interval": "1m",
+      "input_series": [],
+      "alert_rule_test": [{"eval_time": "3m", "alertname": "NsangusaMetricsUnavailable", "exp_alerts": [
+        {"exp_labels": {"job": "nsangusa-backend", "severity": "warning", "qualification": "provisional"},
+         "exp_annotations": {"summary": "Backend metrics cannot be scraped", "runbook_url": "docs/reliability-operations.md#monitoring-and-alert-response"}}
+      ]}]
+    },
+    {
+      "name": "stale database inventory does not look healthy",
+      "interval": "1m",
+      "input_series": [
+        {"series": "news_operations_collection_success{job=\"nsangusa-backend\",namespace=\"drill\",instance=\"one\"}", "values": "0+0x10"},
+        {"series": "news_operations_snapshot_timestamp_seconds{job=\"nsangusa-backend\",namespace=\"drill\",instance=\"one\"}", "values": "0+0x10"}
+      ],
+      "alert_rule_test": [{"eval_time": "5m", "alertname": "NsangusaInventoryStale", "exp_alerts": [
+        {"exp_labels": {"job": "nsangusa-backend", "namespace": "drill", "instance": "one", "severity": "warning", "qualification": "provisional"},
+         "exp_annotations": {"summary": "Operational database inventory is missing or stale; do not trust backlog gauges", "runbook_url": "docs/reliability-operations.md#monitoring-and-alert-response"}}
+      ]}]
+    }
+  ]
+}

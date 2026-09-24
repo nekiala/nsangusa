@@ -8,8 +8,10 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:runtime-proxy": "PUBLIC_BASE_URL= NEXT_PUBLIC_SITE_URL=http://build-time.invalid:3000 NEXT_PUBLIC_API_URL= NEXT_PUBLIC_API_MODE=api NSANGUSA_API_URL=http://build-time.invalid:8080 NEXT_DIST_DIR=.next-runtime-proxy npm run build && vitest run --config=vitest.runtime.config.ts",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:fullstack": "playwright test --config=playwright.fullstack.config.ts"
   },
   "dependencies": {
     "next": "16.3.4",
@@ -17,6 +19,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@eslint/js": "9.39.1",
     "@playwright/test": "1.58.2",
     "@testing-library/dom": "10.4.1",

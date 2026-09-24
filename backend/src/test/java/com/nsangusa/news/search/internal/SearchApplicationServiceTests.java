@@ -39,7 +39,7 @@ class SearchApplicationServiceTests {
   void indexesPublishedArticlesThroughThePublicArticleApi() {
     UUID articleId = UUID.randomUUID();
     var article = article(articleId, ArticleState.PUBLISHED, Instant.now());
-    when(articles.get(articleId)).thenReturn(article);
+    when(articles.getLocked(articleId)).thenReturn(article);
 
     new SearchApplicationService(articles, documents).indexPublished(articleId);
 
@@ -49,12 +49,21 @@ class SearchApplicationServiceTests {
   @Test
   void removesAnArticleWhenAVisibilityEventFindsItNoLongerPublished() {
     UUID articleId = UUID.randomUUID();
-    when(articles.get(articleId))
+    when(articles.getLocked(articleId))
         .thenReturn(article(articleId, ArticleState.UNPUBLISHED, Instant.now()));
 
     new SearchApplicationService(articles, documents).indexPublished(articleId);
 
     verify(documents).delete(articleId);
+  }
+
+  @Test
+  void delayedUnpublicationCannotHideAnAlreadyRestoredArticle() {
+    UUID id = UUID.randomUUID();
+    var restored = article(id, ArticleState.PUBLISHED, Instant.now());
+    when(articles.getLocked(id)).thenReturn(restored);
+    new SearchApplicationService(articles, documents).removeUnpublished(id);
+    verify(documents).upsert(restored);
   }
 
   private static ArticleService.ArticleView article(

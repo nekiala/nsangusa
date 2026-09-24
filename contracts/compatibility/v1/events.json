@@ -1,0 +1,170 @@
+{
+  "baseline": "supported-v1-protocol-2026-09-19",
+  "provenance": "Hand-authored supported protocol examples, not captured production traffic or a released application. Identifiers and content are synthetic.",
+  "envelope": {
+    "eventId": "11111111-1111-4111-8111-111111111111",
+    "schemaVersion": 1,
+    "aggregateId": "22222222-2222-4222-8222-222222222222",
+    "correlationId": "33333333-3333-4333-8333-333333333333",
+    "causationId": null,
+    "timestamp": "2026-09-19T00:00:00Z",
+    "producer": "compatibility-fixture",
+    "traceContext": {"traceparent": "00-00000000000000000000000000000001-0000000000000001-01"},
+    "idempotencyKey": "supported-v1-fixture"
+  },
+  "requiredEnvelopeFields": [
+    "eventId", "eventType", "schemaVersion", "aggregateId", "correlationId",
+    "timestamp", "producer", "traceContext", "idempotencyKey", "payload"
+  ],
+  "invalidEnvelopeExamples": [
+    {"name": "unknown-version", "field": "schemaVersion", "value": 2},
+    {"name": "zero-version", "field": "schemaVersion", "value": 0},
+    {"name": "string-version", "field": "schemaVersion", "value": "1"},
+    {"name": "fractional-version", "field": "schemaVersion", "value": 1.5},
+    {"name": "unknown-type", "field": "eventType", "value": "UnknownEvent"},
+    {"name": "short-uuid", "field": "eventId", "value": "1-1-1-1-1"},
+    {"name": "malformed-uuid", "field": "aggregateId", "value": "not-a-uuid"},
+    {"name": "uuid-number", "field": "correlationId", "value": 42},
+    {"name": "bad-causation", "field": "causationId", "value": "bad"},
+    {"name": "timestamp-no-zone", "field": "timestamp", "value": "2026-09-19T00:00:00"},
+    {"name": "timestamp-invalid-date", "field": "timestamp", "value": "2026-02-30T00:00:00Z"},
+    {"name": "timestamp-number", "field": "timestamp", "value": 123},
+    {"name": "trace-not-string", "field": "traceContext", "value": {"traceparent": 42}},
+    {"name": "unknown-envelope-field", "field": "futureField", "value": true}
+  ],
+  "events": [
+    {
+      "type": "XPostDiscovered", "schema": "x-post-discovered.schema.json",
+      "optional": ["conversationId"],
+      "payload": {
+        "monitoredAccountId": "22222222-2222-4222-8222-222222222222",
+        "postId": "1001", "accountId": "1000", "handle": "fixture",
+        "canonicalUrl": "https://example.test/posts/1001", "permittedText": "Synthetic source report.",
+        "publishedAt": "2026-09-19T00:00:00Z", "conversationId": null
+      }
+    },
+    {
+      "type": "XPostNormalized", "schema": "x-post-normalized.schema.json",
+      "optional": ["conversationId"],
+      "payload": {
+        "sourcePostId": "22222222-2222-4222-8222-222222222222", "postId": "1001",
+        "handle": "fixture", "canonicalUrl": "https://example.test/posts/1001",
+        "normalizedText": "Synthetic source report.", "publishedAt": "2026-09-19T00:00:00Z",
+        "topics": ["science"], "conversationId": null
+      }
+    },
+    {
+      "type": "StoryAnalysisRequested", "schema": "story-analysis-requested.schema.json",
+      "optional": [],
+      "payload": {
+        "storyCandidateId": "22222222-2222-4222-8222-222222222222",
+        "sources": [{
+          "sourcePostId": "44444444-4444-4444-8444-444444444444", "account": "fixture",
+          "postId": "1001", "url": "https://example.test/posts/1001", "publishedAt": "2026-09-19T00:00:00Z"
+        }],
+        "sourceMaterial": "Synthetic source material."
+      }
+    },
+    {
+      "type": "StoryAnalysisBlocked", "schema": "story-analysis-blocked.schema.json",
+      "optional": [],
+      "payload": {
+        "storyCandidateId": "22222222-2222-4222-8222-222222222222",
+        "safetyFlags": ["review-required"], "reason": "Insufficient evidence.", "blockedAt": "2026-09-19T00:00:00Z"
+      }
+    },
+    {
+      "type": "ArticleDraftRequested", "schema": "article-draft-requested.schema.json",
+      "optional": [],
+      "payload": {
+        "storyCandidateId": "22222222-2222-4222-8222-222222222222",
+        "sources": [{
+          "sourcePostId": "44444444-4444-4444-8444-444444444444", "account": "fixture",
+          "postId": "1001", "url": "https://example.test/posts/1001", "publishedAt": "2026-09-19T00:00:00Z"
+        }],
+        "analysis": "Synthetic editorial analysis.",
+        "claims": [{"text": "The source reports a result.", "classification": "REPORTED", "supportingSourceIds": ["44444444-4444-4444-8444-444444444444"]}],
+        "confidence": 0.75, "warnings": []
+      }
+    },
+    {
+      "type": "ArticleDraftGenerated", "schema": "article-draft-generated.schema.json",
+      "optional": ["editorialContext", "inputTokens", "outputTokens"],
+      "payload": {
+        "storyCandidateId": "22222222-2222-4222-8222-222222222222",
+        "headline": "Synthetic headline", "summary": "Synthetic summary.", "body": "Synthetic article body.",
+        "editorialContext": null, "seoTitle": "Synthetic headline", "seoDescription": "Synthetic description.",
+        "slugSuggestion": "synthetic-headline", "tags": ["science"], "topic": "science",
+        "sources": [{
+          "sourcePostId": "44444444-4444-4444-8444-444444444444", "account": "fixture",
+          "postId": "1001", "url": "https://example.test/posts/1001", "publishedAt": "2026-09-19T00:00:00Z"
+        }],
+        "claims": [{"text": "The source reports a result.", "classification": "REPORTED", "supportingSourceIds": ["44444444-4444-4444-8444-444444444444"]}],
+        "confidence": 0.75, "uncertaintyNotes": [], "safetyFlags": [], "humanReviewRequired": true,
+        "imagePrompt": "Neutral abstract illustration.", "imageAltText": "Neutral illustration.",
+        "socialPreviewText": "Synthetic preview.", "provider": "fixture", "model": "fixture-model",
+        "promptVersion": "v1", "inputTokens": 0, "outputTokens": 0, "generatedAt": "2026-09-19T00:00:00Z"
+      }
+    },
+    {
+      "type": "ArticleImageRequested", "schema": "article-image-requested.schema.json", "optional": [],
+      "payload": {"articleId": "22222222-2222-4222-8222-222222222222", "prompt": "Neutral illustration.", "altText": "Neutral illustration."}
+    },
+    {
+      "type": "ArticleImageGenerated", "schema": "article-image-generated.schema.json", "optional": ["generationId"],
+      "payload": {
+        "articleId": "22222222-2222-4222-8222-222222222222", "generationId": null,
+        "objectKey": "articles/fixture/hero.svg", "altText": "Neutral illustration.",
+        "provider": "fixture", "model": "fixture-model", "generatedAt": "2026-09-19T00:00:00Z"
+      }
+    },
+    {
+      "type": "ArticleImageCandidateGenerated", "schema": "article-image-candidate-generated.schema.json", "optional": [],
+      "payload": {
+        "articleId": "22222222-2222-4222-8222-222222222222", "generationId": "55555555-5555-4555-8555-555555555555",
+        "objectKey": "articles/fixture/hero.svg", "altText": "Neutral illustration.",
+        "provider": "nsangusa-editorial", "model": "neutral-illustration-v1", "generatedAt": "2026-09-19T00:00:00Z"
+      }
+    },
+    {
+      "type": "ArticleImageApproved", "schema": "article-image-approved.schema.json", "optional": ["generatedImage"],
+      "payload": {
+        "articleId": "22222222-2222-4222-8222-222222222222", "generationId": "55555555-5555-4555-8555-555555555555",
+        "objectKey": "articles/fixture/hero.svg", "altText": "Neutral illustration.",
+        "approvedBy": "66666666-6666-4666-8666-666666666666", "approvedAt": "2026-09-19T00:00:00Z",
+        "generatedImage": false
+      }
+    },
+    {
+      "type": "ArticleReadyForReview", "schema": "article-ready-for-review.schema.json", "optional": [],
+      "payload": {"articleId": "22222222-2222-4222-8222-222222222222"}
+    },
+    {
+      "type": "ArticleApproved", "schema": "article-approved.schema.json", "optional": [],
+      "payload": {"articleId": "22222222-2222-4222-8222-222222222222", "approvedBy": "66666666-6666-4666-8666-666666666666"}
+    },
+    {
+      "type": "ArticlePublished", "schema": "article-published.schema.json", "optional": ["publishedBy", "publisherType"],
+      "payload": {
+        "articleId": "22222222-2222-4222-8222-222222222222", "slug": "synthetic-headline", "headline": "Synthetic headline",
+        "publishedAt": "2026-09-19T00:00:00Z", "newsletterEligible": true,
+        "publishedBy": null, "publisherType": null
+      }
+    },
+    {
+      "type": "ArticleUnpublished", "schema": "article-unpublished.schema.json", "optional": [],
+      "payload": {"articleId": "22222222-2222-4222-8222-222222222222"}
+    },
+    {
+      "type": "NewsletterDispatchRequested", "schema": "newsletter-dispatch-requested.schema.json", "optional": [],
+      "payload": {"articleId": "22222222-2222-4222-8222-222222222222", "campaignKey": "fixture-campaign", "slug": "synthetic-headline", "headline": "Synthetic headline"}
+    },
+    {
+      "type": "CommentSubmitted", "schema": "comment-submitted.schema.json", "optional": [],
+      "payload": {
+        "commentId": "77777777-7777-4777-8777-777777777777", "articleId": "22222222-2222-4222-8222-222222222222",
+        "authorId": "66666666-6666-4666-8666-666666666666"
+      }
+    }
+  ]
+}

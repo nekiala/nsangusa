@@ -1,29 +1,34 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AuthenticatedArea } from "@/components/authenticated-area";
 import { AuthForm } from "@/components/forms";
+import { AccountSettings } from "@/components/account/account-settings";
+import { PasswordResetCompletion, VerifyEmail } from "@/components/account/token-completion";
+import { publicationPolicies } from "@/lib/publication-policies";
 
-const legalCopy: Record<string, { title: string; sections: [string, string][] }> = {
-  privacy: { title: "Privacy", sections: [["What we collect", "We collect only the information needed to deliver an account or newsletter you ask for. We do not sell personal data or use advertising trackers."], ["Your choices", "You may update your preferences, unsubscribe, or request deletion of your information at any time."]]},
-  terms: { title: "Terms of use", sections: [["Using our work", "Our reporting is provided for personal, non-commercial reading. Please link to our work rather than reproducing it in full."], ["Accounts", "Keep credentials private and contact us if you believe your account has been accessed without permission."]]},
-  editorial: { title: "Editorial standards", sections: [["Independence", "Our reporting is guided by evidence, public interest and editorial independence. Funding relationships never determine coverage."], ["Methods", "We seek primary sources, identify uncertainty, and give subjects a fair chance to respond to material claims."]]},
-  corrections: { title: "Corrections", sections: [["How we correct", "When we make a material error, we correct it promptly and append a clear note explaining what changed."], ["Report an issue", "Send a concise description and supporting information to corrections@nsangusa.example."]]}
-};
+export const dynamic = "force-dynamic";
 const authPages = { "sign-in": "sign-in", register: "register", "password-reset": "reset" } as const;
 const authTitles = { "sign-in": "Sign in", register: "Create an account", "password-reset": "Reset password" } as const;
-type Props = { params: Promise<{ page: string }>; searchParams: Promise<{ next?: string }> };
+type Props = { params: Promise<{ page: string }>; searchParams: Promise<{ next?: string; token?: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const page = (await params).page;
-  const title = legalCopy[page]?.title || authTitles[page as keyof typeof authTitles] || (page === "profile" ? "Your profile" : page);
-  return { title, alternates: { canonical: `/${page}` }, robots: page === "profile" || page in authPages ? { index: false, follow: false } : undefined };
+  const legalTitle = ["privacy", "terms", "editorial", "corrections"].includes(page) ? publicationPolicies().pages[page].title : undefined;
+  const title = legalTitle || authTitles[page as keyof typeof authTitles] || (page === "profile" ? "Your profile" : page === "verify-email" ? "Verify your email" : page);
+  return { title, alternates: { canonical: `/${page}` }, robots: page === "profile" || page === "verify-email" || page in authPages ? { index: false, follow: false } : undefined };
 }
 export default async function UtilityPage({ params, searchParams }: Props) {
   const page = (await params).page;
+  const query = await searchParams;
+  if (page === "verify-email") return <div className="auth-wrap shell"><VerifyEmail token={query.token || ""} /></div>;
+  if (page === "password-reset" && query.token !== undefined) return <div className="auth-wrap shell"><PasswordResetCompletion token={query.token} /></div>;
   if (page in authPages) return <div className="auth-wrap shell"><AuthForm kind={authPages[page as keyof typeof authPages]} nextPath={(await searchParams).next} /></div>;
-  if (page === "profile") return <AuthenticatedArea><section className="section shell"><p className="eyebrow">Member area</p><h1>Your profile & preferences</h1><div className="auth-panel"><form><label htmlFor="profile-name">Display name</label><input id="profile-name" defaultValue="Reader" autoComplete="name" readOnly /><label htmlFor="digest">Newsletter frequency</label><select id="digest" defaultValue="Weekly" disabled><option>Weekly</option><option>Monthly</option><option>None</option></select><p className="form-note">Account changes are disabled in this frontend demonstration.</p><Link href="/password-reset">Reset password</Link></form></div></section></AuthenticatedArea>;
-  const legal = legalCopy[page];
-  if (legal) return <article className="legal shell"><p className="eyebrow">Nsangusa</p><h1>{legal.title}</h1>{legal.sections.map(([heading, copy]) => <section key={heading}><h2>{heading}</h2><p>{copy}</p></section>)}</article>;
+  if (page === "profile") return <AuthenticatedArea><AccountSettings /></AuthenticatedArea>;
+  const policies = publicationPolicies();
+  const legal = Object.hasOwn(policies.pages, page) ? policies.pages[page] : undefined;
+  if (legal) return <article className="legal shell"><p className="eyebrow">{policies.publisher}</p><h1>{legal.title}</h1>
+    {!policies.approved && <p className="notice">Draft publication policy. Publisher, editorial and privacy approval is required before public launch.</p>}
+    <p>Policy version: {policies.version}{policies.effectiveDate && <> · Effective <time dateTime={policies.effectiveDate}>{policies.effectiveDate}</time></>}</p>
+    {legal.sections.map(({ heading, paragraphs }) => <section key={heading}><h2>{heading}</h2>{paragraphs.map((copy, index) => <p key={index}>{copy}</p>)}</section>)}</article>;
   notFound();
 }

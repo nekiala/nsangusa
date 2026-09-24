@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule isolated Nsangusa staging certificate renewal
+
+[Timer]
+OnCalendar=*-*-* 00,12:00:00
+RandomizedDelaySec=1h
+Persistent=true
+Unit=nsangusa-acme-renew.service
+
+[Install]
+WantedBy=timers.target

@@ -12,6 +12,8 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
 interface FailedEventRepository extends JpaRepository<FailedEvent, UUID> {
+  org.springframework.data.domain.Page<FailedEvent> findByStatus(String status, Pageable pageable);
+
   Optional<FailedEvent> findByDltTopicAndDltPartitionAndDltOffset(
       String dltTopic, int dltPartition, long dltOffset);
 
@@ -30,6 +32,12 @@ interface FailedEventRepository extends JpaRepository<FailedEvent, UUID> {
 
 interface EventReplayRequestRepository extends JpaRepository<EventReplayRequest, UUID> {
   @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("select r from EventReplayRequest r where r.id = :id")
+  Optional<EventReplayRequest> findLockedById(UUID id);
+
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query(
+      "select r from EventReplayRequest r where r.status in :statuses and r.nextReplayAt <= current_timestamp order by r.requestedAt, r.id")
   List<EventReplayRequest> findByStatusInOrderByRequestedAtAsc(
       List<String> statuses, Pageable pageable);
 }

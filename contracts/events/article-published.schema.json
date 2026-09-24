@@ -38,6 +38,14 @@
             },
             "newsletterEligible": {
               "type": "boolean"
+            },
+            "publishedBy": {
+              "type": ["string", "null"],
+              "format": "uuid"
+            },
+            "publisherType": {
+              "type": ["string", "null"],
+              "enum": ["human", "system", null]
             }
           }
         }
@@ -45,4 +53,3 @@
     }
   ]
 }
-

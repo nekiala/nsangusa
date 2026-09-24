@@ -3,10 +3,12 @@ package com.nsangusa.news.sourceingestion.internal;
 import com.nsangusa.news.eventprocessing.DurableEventPublisher;
 import com.nsangusa.news.eventprocessing.ReplaySafetyRegistry;
 import com.nsangusa.news.integration.NewsEvents.XPostDiscovered;
+import com.nsangusa.news.integration.SystemActors;
 import com.nsangusa.news.sourceingestion.SourceIngestionService;
 import java.net.URI;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -276,7 +278,7 @@ class SourceIngestionApplicationService implements SourceIngestionService {
     if ("deleted".equals(post.status)) {
       throw new IllegalStateException("Deleted source content cannot be edited");
     }
-    post.permittedText = permittedText.trim();
+    post.permittedText = SourceNormalizationConsumer.normalize(permittedText);
     post.status = "excluded_compliance_edit";
     markCompliancePending(post, "edit", reason);
     suppress(post, "compliance edit pending reconciliation", actorId);
@@ -294,16 +296,114 @@ class SourceIngestionApplicationService implements SourceIngestionService {
   @Transactional
   public void applyComplianceDeletion(UUID sourcePostId, String reason, UUID actorId) {
     var post = requireLockedPost(sourcePostId);
+    deleteForCompliance(post, reason, actorId, false);
+  }
+
+  @Override
+  @Transactional
+  public void reconcileProviderPost(UUID sourcePostId, ProviderPostSnapshot snapshot) {
+    var post = requireLockedPost(sourcePostId);
+    Instant observedAt = requireObservationTime(snapshot.observedAt());
+    post.lastCheckedAt = observedAt;
+    post.lastSeenAt = observedAt;
+    if ("deleted".equals(post.status)) {
+      return;
+    }
+    if (snapshot.postId() == null || !snapshot.postId().matches("\\d{1,30}")) {
+      throw new IllegalArgumentException("X postId must be the official numeric post ID");
+    }
+    String editChainId = normalizeOptionalId(snapshot.editChainId());
+    if (editChainId == null) {
+      editChainId = snapshot.postId();
+    }
+    if (!editChainId.matches("\\d{1,30}")) {
+      throw new IllegalArgumentException("X edit-chain ID must be an official numeric post ID");
+    }
+    String canonicalUrl =
+        normalizeOfficialCanonicalUrl(snapshot.canonicalUrl(), post.handle, snapshot.postId());
+    String normalized = SourceNormalizationConsumer.normalize(snapshot.permittedText());
+    boolean changed =
+        !post.postId.equals(snapshot.postId()) || !post.permittedText.equals(normalized);
+    post.conversationId = normalizeOptionalId(snapshot.conversationId());
+    if (!post.editChainId.equals(editChainId)
+        && !posts.existsByEditChainIdAndIdNot(editChainId, post.id)) {
+      post.editChainId = editChainId;
+    }
+    recordRelationships(post.id, post.conversationId, snapshot.relationships());
+    if (!changed) {
+      post.canonicalUrl = canonicalUrl;
+      return;
+    }
+    String previousPostId = post.postId;
+    post.postId = snapshot.postId();
+    post.canonicalUrl = canonicalUrl;
+    post.permittedText = normalized;
+    if ("active".equals(post.status)) {
+      post.status = "excluded_compliance_edit";
+    }
+    markCompliancePending(post, "edit", "Official X API reported an edited post");
+    post.reconciliationState = "reconciled";
+    post.complianceReconciledAt = observedAt;
+    suppress(post, "source content edited", SystemActors.AUTOMATION);
+    audit(
+        "source_provider_edit",
+        "source_post",
+        post.postId,
+        post.id,
+        SystemActors.AUTOMATION,
+        "Official X API reported an edited post",
+        "{\"previousPostId\":\""
+            + previousPostId
+            + "\",\"currentPostId\":\""
+            + post.postId
+            + "\"}");
+  }
+
+  @Override
+  @Transactional
+  public void applyProviderDeletion(UUID sourcePostId, String reason, Instant checkedAt) {
+    var post = requireLockedPost(sourcePostId);
+    post.lastCheckedAt = requireObservationTime(checkedAt);
+    if ("deleted".equals(post.status)) {
+      return;
+    }
+    deleteForCompliance(post, reason, SystemActors.AUTOMATION, true);
+  }
+
+  @Override
+  @Transactional
+  public void markProviderChecked(UUID sourcePostId, Instant checkedAt) {
+    requireLockedPost(sourcePostId).lastCheckedAt = requireObservationTime(checkedAt);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public void assertSourcesPublishable(Collection<UUID> sourcePostIds) {
+    Set<UUID> uniqueIds = Set.copyOf(sourcePostIds);
+    if (uniqueIds.isEmpty()) {
+      throw new IllegalArgumentException("A publishable article requires at least one source");
+    }
+    if (posts.countByIdInAndStatus(uniqueIds, "active") != uniqueIds.size()) {
+      throw new IllegalStateException("Article contains a restricted or missing source");
+    }
+  }
+
+  private void deleteForCompliance(
+      SourcePost post, String reason, UUID actorId, boolean reconciled) {
     if (!tombstones.existsByPostId(post.postId)) {
       tombstones.save(
           new SourceTombstone(
-              UUID.randomUUID(), post.id, post.postId, post.accountId, reason.trim(), actorId));
+              UUID.randomUUID(), post.id, post.postId, post.accountId, reason, actorId));
     }
     post.permittedText = "[deleted by source]";
     post.status = "deleted";
     post.contentDeletedAt = Instant.now();
     post.excludedAt = post.contentDeletedAt;
     markCompliancePending(post, "delete", reason);
+    if (reconciled) {
+      post.reconciliationState = "reconciled";
+      post.complianceReconciledAt = post.lastCheckedAt;
+    }
     suppress(post, "source content deleted", actorId);
     audit(
         "source_compliance_deletion",
@@ -369,9 +469,12 @@ class SourceIngestionApplicationService implements SourceIngestionService {
   public UUID discoverPost(
       UUID monitoredAccountId,
       String postId,
+      String editChainId,
+      String conversationId,
       String canonicalUrl,
       String permittedText,
-      Instant publishedAt) {
+      Instant publishedAt,
+      List<SourceRelationshipInput> sourceRelationships) {
     var account =
         accounts
             .findById(monitoredAccountId)
@@ -383,7 +486,11 @@ class SourceIngestionApplicationService implements SourceIngestionService {
     if (postId == null || !postId.matches("\\d{1,30}")) {
       throw new IllegalArgumentException("X postId must be the official numeric post ID");
     }
-    validateOfficialCanonicalUrl(canonicalUrl, account.handle, postId);
+    if (editChainId == null || !editChainId.matches("\\d{1,30}")) {
+      throw new IllegalArgumentException("X edit chain ID must be an official numeric post ID");
+    }
+    String normalizedCanonicalUrl =
+        normalizeOfficialCanonicalUrl(canonicalUrl, account.handle, postId);
     if (publishedAt == null || publishedAt.isAfter(Instant.now().plusSeconds(300))) {
       throw new IllegalArgumentException("A valid X publication timestamp is required");
     }
@@ -391,20 +498,26 @@ class SourceIngestionApplicationService implements SourceIngestionService {
       throw new IllegalArgumentException("Permitted X content is required");
     }
     String normalizedPermittedText = SourceNormalizationConsumer.normalize(permittedText);
-    if (posts.existsByPostId(postId) || tombstones.existsByPostId(postId)) {
+    if (posts.existsByPostId(postId)
+        || posts.existsByEditChainId(editChainId)
+        || tombstones.existsByPostId(postId)) {
       throw new IllegalArgumentException("Post already ingested");
     }
+    String normalizedConversationId = normalizeOptionalId(conversationId);
     UUID sourceId = UUID.randomUUID();
     posts.save(
         new SourcePost(
             sourceId,
             monitoredAccountId,
             postId,
+            editChainId,
+            normalizedConversationId,
             account.accountId,
             account.handle,
-            canonicalUrl,
+            normalizedCanonicalUrl,
             normalizedPermittedText,
             publishedAt));
+    recordRelationships(sourceId, normalizedConversationId, sourceRelationships);
     account.lastSuccessfulSyncAt = Instant.now();
     var payload =
         new XPostDiscovered(
@@ -412,9 +525,10 @@ class SourceIngestionApplicationService implements SourceIngestionService {
             postId,
             account.accountId,
             account.handle,
-            canonicalUrl,
+            normalizedCanonicalUrl,
             normalizedPermittedText,
-            publishedAt);
+            publishedAt,
+            normalizedConversationId);
     events.enqueue(
         "XPostDiscovered",
         sourceId,
@@ -425,28 +539,79 @@ class SourceIngestionApplicationService implements SourceIngestionService {
     return sourceId;
   }
 
+  private void recordRelationships(
+      UUID sourcePostId, String conversationId, List<SourceRelationshipInput> sourceRelationships) {
+    var relationshipsToRecord = new java.util.ArrayList<SourceRelationshipInput>();
+    if (conversationId != null) {
+      relationshipsToRecord.add(new SourceRelationshipInput(conversationId, "conversation"));
+    }
+    if (sourceRelationships != null) {
+      relationshipsToRecord.addAll(sourceRelationships);
+    }
+    for (var relationship : relationshipsToRecord) {
+      if (relationship.relatedPostId() == null
+          || !relationship.relatedPostId().matches("\\d{1,30}")
+          || relationship.relationshipType() == null
+          || !relationship.relationshipType().matches("[a-z_]{1,32}")) {
+        throw new IllegalArgumentException("Invalid X source relationship");
+      }
+      if (!relationships.existsBySourcePostIdAndRelatedPostIdAndRelationshipType(
+          sourcePostId, relationship.relatedPostId(), relationship.relationshipType())) {
+        relationships.save(
+            new SourceRelationshipEntity(
+                UUID.randomUUID(),
+                sourcePostId,
+                relationship.relatedPostId(),
+                relationship.relationshipType()));
+      }
+    }
+  }
+
+  private static Instant requireObservationTime(Instant observedAt) {
+    Instant checkedAt = observedAt == null ? Instant.now() : observedAt;
+    if (checkedAt.isAfter(Instant.now().plusSeconds(300))) {
+      throw new IllegalArgumentException("Provider observation timestamp is invalid");
+    }
+    return checkedAt;
+  }
+
+  private static String normalizeOptionalId(String value) {
+    if (value == null || value.isBlank()) {
+      return null;
+    }
+    String normalized = value.trim();
+    if (!normalized.matches("\\d{1,30}")) {
+      throw new IllegalArgumentException("X relationship IDs must be numeric");
+    }
+    return normalized;
+  }
+
   private static String normalizeHandle(String handle) {
     String normalized = handle.trim();
     return normalized.startsWith("@") ? normalized.substring(1) : normalized;
   }
 
-  private static void validateOfficialCanonicalUrl(
+  private static String normalizeOfficialCanonicalUrl(
       String canonicalUrl, String handle, String postId) {
-    try {
-      URI uri = URI.create(canonicalUrl);
-      String expectedPath = "/" + handle + "/status/" + postId;
-      if (!"https".equalsIgnoreCase(uri.getScheme())
-          || !"x.com".equalsIgnoreCase(uri.getHost())
-          || !expectedPath.equalsIgnoreCase(uri.getPath())
-          || uri.getUserInfo() != null
-          || uri.getPort() != -1
-          || uri.getQuery() != null
-          || uri.getFragment() != null) {
-        throw new IllegalArgumentException("Source URL must be the official canonical X post URL");
-      }
-    } catch (IllegalArgumentException exception) {
-      throw new IllegalArgumentException("Source URL must be the official canonical X post URL");
+    String error = "Source URL must be the official canonical X post URL";
+    if (canonicalUrl == null) {
+      throw new IllegalArgumentException(error);
     }
+    URI uri;
+    try {
+      uri = URI.create(canonicalUrl.trim());
+    } catch (IllegalArgumentException exception) {
+      throw new IllegalArgumentException(error);
+    }
+    String expectedPath = "/" + handle + "/status/" + postId;
+    if (!"https".equalsIgnoreCase(uri.getScheme())
+        || !"x.com".equalsIgnoreCase(uri.getHost())
+        || !expectedPath.equalsIgnoreCase(uri.getRawPath())
+        || uri.getUserInfo() != null
+        || uri.getPort() != -1) {
+      throw new IllegalArgumentException(error);
+    }
+    return "https://x.com" + expectedPath;
   }
 
   private MonitoredXAccount requireAccount(UUID accountId) {

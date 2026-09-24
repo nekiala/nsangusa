@@ -1,6 +1,9 @@
 # Backend
 
-Import this directory as a Gradle project in IntelliJ IDEA, select JDK 25, and run `NewsPlatformApplication` with the `local` profile. The checked-in Gradle 9.7.1 wrapper provides deterministic command-line and IntelliJ builds.
+Import this directory as a Gradle project in IntelliJ IDEA, use the checked-in Gradle wrapper, and
+run `NewsPlatformApplication` with the `local` profile. Gradle resolves the Java 25 compiler
+toolchain through the pinned Foojay resolver when it is not installed locally. Do not commit
+machine-specific `.idea` or `.iml` files.
 
 ```bash
 ./gradlew bootRun --args='--spring.profiles.active=local'

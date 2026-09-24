@@ -1,0 +1,116 @@
+services:
+  postgres:
+    ports: !reset []
+
+  kafka:
+    ports: !reset []
+    environment:
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list >/dev/null 2>&1"]
+
+  redis:
+    ports: !reset []
+
+  minio:
+    ports: !override
+      - "127.0.0.1:19001:9001"
+
+  mailpit:
+    ports: !override
+      - "127.0.0.1:18025:8025"
+
+  otel-collector:
+    ports: !reset []
+
+  backend:
+    image: ${PREVIEW_BACKEND_IMAGE:-nsangusa-backend:step6-preview}
+    build:
+      context: ../../backend/build/libs
+      dockerfile: ../../../infrastructure/docker/backend.Dockerfile
+      args:
+        JAR_FILE: ${PREVIEW_BACKEND_JAR:-news-platform-0.1.0.jar}
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SPRING_DOCKER_COMPOSE_ENABLED: "false"
+      DATABASE_URL: jdbc:postgresql://postgres:5432/news
+      DATABASE_USERNAME: ${POSTGRES_USER:-news}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-news}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      REDIS_HOST: redis
+      MAIL_HOST: mailpit
+      MAIL_PORT: "1025"
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_SERVER_SIDE_ENCRYPTION: none
+      PUBLIC_BASE_URL: http://localhost:3000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      LOCAL_SEED: "true"
+      AI_LIVE_ENABLED: ${AI_LIVE_ENABLED:-false}
+      AI_CREDENTIAL_MASTER_KEY: ${AI_CREDENTIAL_MASTER_KEY:-}
+      AI_MODEL: ${AI_MODEL:-gpt-5-mini}
+      AI_AUTHORIZED_MODELS: ${AI_AUTHORIZED_MODELS:-${AI_MODEL:-gpt-5-mini}}
+      AI_TIMEOUT: ${AI_TIMEOUT:-20s}
+      AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-4096}
+      AI_DAILY_TOKEN_BUDGET: ${AI_DAILY_TOKEN_BUDGET:-1000000}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_healthy
+      otel-collector:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -ec
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8080;
+          printf 'GET /actuator/health/readiness HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3;
+          read -r status <&3;
+          [[ "$$status" == *" 200 "* ]]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 40s
+    mem_limit: 1g
+    restart: unless-stopped
+    networks: [dev]
+
+  frontend:
+    image: ${PREVIEW_FRONTEND_IMAGE:-nsangusa-frontend:step6-preview}
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+      args:
+        NSANGUSA_API_URL: http://backend:8080
+        NEXT_PUBLIC_SITE_URL: http://localhost:3000
+    environment:
+      NSANGUSA_API_URL: http://backend:8080
+      PUBLIC_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      NEXT_PUBLIC_API_MODE: api
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/sign-in').then(r => process.exit(r.ok ? 0 : 1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    mem_limit: 512m
+    restart: unless-stopped
+    networks: [dev]

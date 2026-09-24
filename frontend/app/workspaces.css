@@ -1,0 +1,25 @@
+.account-settings { max-width: 760px; padding-block: 3rem; }
+.account-settings form, .account-settings section { display: grid; gap: .75rem; margin-block: 1.5rem; }
+.account-settings section { border-top: 1px solid var(--line); padding-top: 1rem; }
+.account-settings input, .account-settings select { font: inherit; background: var(--paper); color: var(--ink); border: 1px solid var(--ink); padding: .7rem; min-width: 0; width: 100%; }
+.account-settings button { justify-self: start; }
+.account-settings h1 { font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.1; }
+.admin-content fieldset { min-width: 0; }
+.admin-content pre { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.comment-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.comments li { overflow-wrap: anywhere; }
+:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+.site-footer :focus-visible { outline-color: var(--paper); }
+.site-footer .form-note { color: var(--line); }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+.footer-grid > *, .article-grid > * { min-width: 0; }
+.article-header, .article-body, .account-settings { overflow-wrap: anywhere; }
+.header-account { justify-self: end; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .6rem; min-width: 0; max-width: 20rem; font: .83rem/1.5 Arial, sans-serif; overflow-wrap: anywhere; }
+.header-account button { padding: .4rem .6rem; }
+.workspace-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.2rem; padding-block: .65rem; border-top: 1px solid var(--line); font: .83rem/1.5 Arial, sans-serif; }
+.workspace-bar > span { font-weight: bold; }
+.workspace-bar a[aria-current="page"] { font-weight: bold; }
+@media (max-width: 700px) {
+  .account-settings button { width: 100%; }
+  .comments .workflow-actions { align-items: stretch; }
+}

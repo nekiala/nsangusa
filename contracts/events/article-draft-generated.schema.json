@@ -49,46 +49,66 @@
             },
             "headline": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 300,
+              "pattern": "\\S"
             },
             "summary": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 2000,
+              "pattern": "\\S"
             },
             "body": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 30000,
+              "pattern": "\\S"
             },
             "editorialContext": {
-              "type": ["string", "null"]
+              "type": ["string", "null"],
+              "maxLength": 5000
             },
             "seoTitle": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 300,
+              "pattern": "\\S"
             },
             "seoDescription": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 500,
+              "pattern": "\\S"
             },
             "slugSuggestion": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 250,
+              "pattern": "\\S"
             },
             "tags": {
               "type": "array",
               "minItems": 1,
+              "maxItems": 20,
               "uniqueItems": true,
               "items": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 50,
+                "pattern": "\\S"
               }
             },
             "topic": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "\\S"
             },
             "sources": {
               "type": "array",
               "minItems": 1,
+              "maxItems": 20,
               "items": {
                 "$ref": "common.schema.json#/$defs/sourceReference"
               }
@@ -96,24 +116,34 @@
             "claims": {
               "type": "array",
               "minItems": 1,
+              "maxItems": 50,
               "items": {
                 "$ref": "common.schema.json#/$defs/claim"
               }
             },
             "confidence": {
-              "type": "number"
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
             },
             "uncertaintyNotes": {
               "type": "array",
-              "minItems": 1,
+              "maxItems": 50,
               "items": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "pattern": "\\S"
               }
             },
             "safetyFlags": {
               "type": "array",
+              "maxItems": 50,
               "items": {
-                "type": "string"
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "pattern": "\\S"
               }
             },
             "humanReviewRequired": {
@@ -121,27 +151,47 @@
             },
             "imagePrompt": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 4000,
+              "pattern": "\\S"
             },
             "imageAltText": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 500,
+              "pattern": "\\S"
             },
             "socialPreviewText": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 1000,
+              "pattern": "\\S"
             },
             "provider": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "\\S"
             },
             "model": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "\\S"
             },
             "promptVersion": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "\\S"
+            },
+            "inputTokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "outputTokens": {
+              "type": "integer",
+              "minimum": 0
             },
             "generatedAt": {
               "type": "string",
@@ -153,4 +203,3 @@
     }
   ]
 }
-

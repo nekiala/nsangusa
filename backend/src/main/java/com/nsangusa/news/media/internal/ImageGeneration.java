@@ -30,6 +30,15 @@ class ImageGeneration {
   @Column(nullable = false)
   String model;
 
+  @Column(columnDefinition = "text")
+  String renderedPrompt;
+
+  @Column(length = 100)
+  String promptVersion;
+
+  @Column(length = 200)
+  String providerRequestId;
+
   @Column(nullable = false)
   String safetyStatus;
 
@@ -38,6 +47,9 @@ class ImageGeneration {
 
   Instant approvedAt;
   UUID approvedBy;
+
+  @Column(nullable = false)
+  boolean approvalEventExpected;
 
   protected ImageGeneration() {}
 
@@ -48,7 +60,18 @@ class ImageGeneration {
       String objectKey,
       String provider,
       String model) {
-    this.id = UUID.randomUUID();
+    this(UUID.randomUUID(), articleId, prompt, altText, objectKey, provider, model);
+  }
+
+  ImageGeneration(
+      UUID id,
+      UUID articleId,
+      String prompt,
+      String altText,
+      String objectKey,
+      String provider,
+      String model) {
+    this.id = id;
     this.articleId = articleId;
     this.prompt = prompt;
     this.altText = altText;
@@ -56,12 +79,21 @@ class ImageGeneration {
     this.provider = provider;
     this.model = model;
     this.safetyStatus = "review_required";
+    this.approvalEventExpected = false;
     this.createdAt = Instant.now();
   }
 
-  void approve(UUID actorId) {
+  boolean approve(UUID actorId) {
+    if ("approved".equals(safetyStatus)) {
+      if (!actorId.equals(approvedBy)) {
+        throw new IllegalStateException("Image generation is already approved");
+      }
+      return false;
+    }
+    approvalEventExpected = true;
     safetyStatus = "approved";
     approvedAt = Instant.now();
     approvedBy = actorId;
+    return true;
   }
 }

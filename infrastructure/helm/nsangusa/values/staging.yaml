@@ -14,6 +14,7 @@ secret:
 backendConfig:
   SPRING_PROFILES_ACTIVE: staging
   PROVIDER_MODE: fake
+  LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
   COOKIE_SECURE: "true"
 
 migration:

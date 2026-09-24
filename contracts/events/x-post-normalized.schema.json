@@ -51,6 +51,9 @@
               "items": {
                 "type": "string"
               }
+            },
+            "conversationId": {
+              "type": ["string", "null"]
             }
           }
         }
@@ -58,4 +61,3 @@
     }
   ]
 }
-

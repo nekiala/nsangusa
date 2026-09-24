@@ -6,6 +6,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nsangusa.news.integration.NewsEvents.ArticleApproved;
+import jakarta.validation.Validation;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,7 +21,12 @@ class JpaEventStoreTests {
 
   @Test
   void persistsCompleteOutboxEnvelopeAndConsumerMarker() {
-    var store = new JpaEventStore(outbox, processed, new ObjectMapper().findAndRegisterModules());
+    var store =
+        new JpaEventStore(
+            outbox,
+            processed,
+            new ObjectMapper().findAndRegisterModules(),
+            Validation.buildDefaultValidatorFactory().getValidator());
     UUID aggregateId = UUID.randomUUID();
 
     UUID eventId =
@@ -29,7 +36,7 @@ class JpaEventStoreTests {
             aggregateId,
             null,
             "approval:" + aggregateId,
-            java.util.Map.of("articleId", aggregateId));
+            new ArticleApproved(aggregateId, UUID.randomUUID()));
     when(processed.existsByEventIdAndConsumerName(eventId, "consumer")).thenReturn(false);
 
     assertThat(store.wasProcessed(eventId, "consumer")).isFalse();

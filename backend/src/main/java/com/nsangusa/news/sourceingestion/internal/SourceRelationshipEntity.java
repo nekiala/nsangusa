@@ -14,4 +14,12 @@ class SourceRelationshipEntity {
   String relationshipType;
 
   protected SourceRelationshipEntity() {}
+
+  SourceRelationshipEntity(
+      UUID id, UUID sourcePostId, String relatedPostId, String relationshipType) {
+    this.id = id;
+    this.sourcePostId = sourcePostId;
+    this.relatedPostId = relatedPostId;
+    this.relationshipType = relationshipType;
+  }
 }

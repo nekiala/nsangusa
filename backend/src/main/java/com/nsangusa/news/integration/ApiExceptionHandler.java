@@ -36,6 +36,17 @@ class ApiExceptionHandler {
         request);
   }
 
+  @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+  ProblemDetail responseStatus(
+      org.springframework.web.server.ResponseStatusException exception,
+      HttpServletRequest request) {
+    var status = HttpStatus.valueOf(exception.getStatusCode().value());
+    return problem(
+        status,
+        exception.getReason() == null ? status.getReasonPhrase() : exception.getReason(),
+        request);
+  }
+
   private ProblemDetail problem(HttpStatus status, String detail, HttpServletRequest request) {
     var problem = ProblemDetail.forStatusAndDetail(status, detail);
     problem.setType(URI.create("https://news.example.invalid/problems/" + status.value()));

@@ -24,6 +24,10 @@
               "type": "string",
               "format": "uuid"
             },
+            "generationId": {
+              "type": ["string", "null"],
+              "format": "uuid"
+            },
             "objectKey": {
               "type": "string",
               "minLength": 1
@@ -50,4 +54,3 @@
     }
   ]
 }
-

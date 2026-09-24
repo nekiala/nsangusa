@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.nsangusa.invalid/events/story-analysis-blocked.schema.json",
+  "title": "StoryAnalysisBlocked",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "const": "StoryAnalysisBlocked"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["storyCandidateId", "safetyFlags", "reason", "blockedAt"],
+          "properties": {
+            "storyCandidateId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "safetyFlags": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "blockedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

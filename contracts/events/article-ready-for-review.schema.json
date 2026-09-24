@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.nsangusa.invalid/events/article-ready-for-review.schema.json",
+  "title": "ArticleReadyForReview",
+  "allOf": [
+    {"$ref": "envelope.schema.json"},
+    {
+      "type": "object",
+      "properties": {
+        "eventType": {"const": "ArticleReadyForReview"},
+        "schemaVersion": {"const": 1},
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["articleId"],
+          "properties": {"articleId": {"type": "string", "format": "uuid"}}
+        }
+      }
+    }
+  ]
+}

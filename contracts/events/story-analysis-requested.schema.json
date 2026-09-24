@@ -27,13 +27,16 @@
             "sources": {
               "type": "array",
               "minItems": 1,
+              "maxItems": 20,
               "items": {
                 "$ref": "common.schema.json#/$defs/sourceReference"
               }
             },
             "sourceMaterial": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 60000,
+              "pattern": "\\S"
             }
           }
         }
@@ -41,4 +44,3 @@
     }
   ]
 }
-

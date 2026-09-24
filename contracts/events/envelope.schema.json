@@ -10,7 +10,6 @@
     "schemaVersion",
     "aggregateId",
     "correlationId",
-    "causationId",
     "timestamp",
     "producer",
     "traceContext",
@@ -28,7 +27,7 @@
     },
     "schemaVersion": {
       "type": "integer",
-      "minimum": 1
+      "const": 1
     },
     "aggregateId": {
       "type": "string",
@@ -71,4 +70,3 @@
     }
   }
 }
-

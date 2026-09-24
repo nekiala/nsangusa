@@ -1,0 +1,53 @@
+#!/usr/bin/python3
+"""Fail renewal if Nginx is not serving the current, trusted staging certificate."""
+import hashlib
+from pathlib import Path
+import socket
+import ssl
+import time
+
+
+HOST = "staging.nsangusa.com"
+CERTIFICATE = Path("/etc/nsangusa-acme/live/staging.nsangusa.com/cert.pem")
+
+
+class CertificateNotReady(Exception):
+    pass
+
+
+def check_certificate(expected, actual, not_after, now):
+    if actual != expected:
+        raise CertificateNotReady("Nginx is not serving the current certificate")
+    if ssl.cert_time_to_seconds(not_after) <= now + 604800:
+        raise CertificateNotReady("Served certificate expires within seven days")
+
+
+def probe(context, expected):
+    with socket.create_connection(("127.0.0.1", 443), timeout=3) as connection:
+        with context.wrap_socket(connection, server_hostname=HOST) as stream:
+            check_certificate(expected, stream.getpeercert(binary_form=True),
+                              stream.getpeercert()["notAfter"], time.time())
+
+
+def wait_for_certificate(context, expected):
+    for attempt in range(10):
+        try:
+            probe(context, expected)
+            return
+        except (OSError, CertificateNotReady) as error:
+            if attempt == 9:
+                raise RuntimeError("Staging certificate activation failed") from error
+            time.sleep(1)
+
+
+def main():
+    expected = ssl.PEM_cert_to_DER_cert(CERTIFICATE.read_text())
+    context = ssl.create_default_context()
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    wait_for_certificate(context, expected)
+    print("Nginx serves the current trusted staging certificate: SHA256 "
+          + hashlib.sha256(expected).hexdigest())
+
+
+if __name__ == "__main__":
+    main()

@@ -32,33 +32,62 @@ class DltMetadataConsumer {
     String payload = record.value() == null ? "" : record.value();
     var parsed = parseEnvelope(payload);
     String exceptionClass =
-        textHeader(
-            record,
-            "kafka_dlt-exception-fqcn",
-            "kafka_exception-fqcn",
-            "kafka_dlt-key-exception-fqcn");
-    String exceptionMessage =
-        textHeader(record, "kafka_dlt-exception-message", "kafka_exception-message");
+        bounded(
+            textHeader(
+                record,
+                "kafka_dlt-exception-cause-fqcn",
+                "kafka_dlt-exception-fqcn",
+                "kafka_exception-fqcn",
+                "kafka_dlt-key-exception-fqcn"),
+            500);
+    String category = textHeader(record, EventFailurePolicy.CATEGORY_HEADER);
     String originalTopic =
         defaultString(
-            textHeader(record, "kafka_dlt-original-topic", "kafka_originalTopic"),
+            bounded(
+                textHeader(
+                    record,
+                    "kafka_dlt-original-topic",
+                    "kafka_original-topic",
+                    "kafka_originalTopic"),
+                249),
             stripDltSuffix(record.topic()));
     int originalPartition =
         intHeader(
             record,
             record.partition(),
             "kafka_dlt-original-partition",
+            "kafka_original-partition",
             "kafka_originalPartitionId");
     long originalOffset =
-        longHeader(record, record.offset(), "kafka_dlt-original-offset", "kafka_originalOffset");
-    int deliveryAttempt = intHeader(record, 1, "kafka_deliveryAttempt", "delivery-attempt");
+        longHeader(
+            record,
+            record.offset(),
+            "kafka_dlt-original-offset",
+            "kafka_original-offset",
+            "kafka_originalOffset");
+    int deliveryAttempt =
+        Math.max(
+            1,
+            intHeader(
+                record,
+                1,
+                EventFailurePolicy.ATTEMPT_HEADER,
+                "kafka_deliveryAttempt",
+                "retry_topic-attempts",
+                "delivery-attempt"));
     boolean poison =
         parsed.eventId == null
             || parsed.eventType == null
+            || java.util.Set.of("invalid", "authorization", "invariant")
+                .contains(category == null ? "" : category)
             || (exceptionClass != null
                 && (exceptionClass.contains("IllegalArgumentException")
                     || exceptionClass.contains("ConstraintViolationException")
-                    || exceptionClass.contains("JsonProcessingException")));
+                    || exceptionClass.contains("JsonProcessingException")
+                    || exceptionClass.contains("DeserializationException")
+                    || exceptionClass.contains("AccessDeniedException")
+                    || exceptionClass.contains("AuthenticationException")
+                    || exceptionClass.contains("TerminalEventException")));
     failedEvents.save(
         new FailedEvent(
             parsed.eventId,
@@ -70,10 +99,10 @@ class DltMetadataConsumer {
             originalTopic,
             originalPartition,
             originalOffset,
-            textHeader(record, "kafka_dlt-original-consumer-group", "kafka_groupId"),
+            bounded(textHeader(record, "kafka_dlt-original-consumer-group", "kafka_groupId"), 255),
             payload,
             exceptionClass,
-            exceptionMessage,
+            EventFailurePolicy.safeMessage(category == null && poison ? "invalid" : category),
             deliveryAttempt,
             poison));
   }
@@ -83,11 +112,15 @@ class DltMetadataConsumer {
       var root = objectMapper.readTree(payload);
       return new ParsedEnvelope(
           uuid(root.path("eventId").asText(null)),
-          root.path("eventType").asText(null),
+          bounded(root.path("eventType").asText(null), 100),
           uuid(root.path("aggregateId").asText(null)));
     } catch (Exception ignored) {
       return new ParsedEnvelope(null, null, null);
     }
+  }
+
+  private static String bounded(String value, int maximum) {
+    return value == null || value.length() > maximum || value.indexOf('\0') >= 0 ? null : value;
   }
 
   private static String textHeader(ConsumerRecord<?, ?> record, String... names) {

@@ -4,7 +4,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nsangusa.news.eventprocessing.DurableEventPublisher;
 import com.nsangusa.news.eventprocessing.ProcessedEventRegistry;
+import com.nsangusa.news.integration.EventCatalog;
 import com.nsangusa.news.integration.EventEnvelope;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Validator;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -17,12 +20,17 @@ class JpaEventStore implements DurableEventPublisher, ProcessedEventRegistry {
   private final OutboxRepository outbox;
   private final ProcessedEventRepository processed;
   private final ObjectMapper objectMapper;
+  private final Validator validator;
 
   JpaEventStore(
-      OutboxRepository outbox, ProcessedEventRepository processed, ObjectMapper objectMapper) {
+      OutboxRepository outbox,
+      ProcessedEventRepository processed,
+      ObjectMapper objectMapper,
+      Validator validator) {
     this.outbox = outbox;
     this.processed = processed;
     this.objectMapper = objectMapper;
+    this.validator = validator;
   }
 
   @Override
@@ -34,6 +42,7 @@ class JpaEventStore implements DurableEventPublisher, ProcessedEventRegistry {
       UUID causationId,
       String idempotencyKey,
       Object payload) {
+    EventCatalog.requirePayload(eventType, payload.getClass());
     UUID eventId = UUID.randomUUID();
     var traceContext =
         MDC.get("traceId") == null
@@ -52,6 +61,10 @@ class JpaEventStore implements DurableEventPublisher, ProcessedEventRegistry {
             traceContext,
             idempotencyKey,
             payload);
+    var violations = validator.validate(envelope);
+    if (!violations.isEmpty()) {
+      throw new ConstraintViolationException("Outgoing event violates its contract", violations);
+    }
     try {
       outbox.save(
           new OutboxEvent(
@@ -76,6 +89,7 @@ class JpaEventStore implements DurableEventPublisher, ProcessedEventRegistry {
   }
 
   @Override
+  @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
   public void markProcessed(UUID eventId, String consumer) {
     processed.save(new ProcessedEvent(eventId, consumer));
   }

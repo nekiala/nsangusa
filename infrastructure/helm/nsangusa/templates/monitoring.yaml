@@ -1,0 +1,126 @@
+{{- if and .Values.monitoring.serviceMonitor.enabled (not .Values.monitoring.enabled) }}
+{{- fail "monitoring.serviceMonitor requires monitoring.enabled" }}
+{{- end }}
+{{- if and .Values.monitoring.prometheusRule.enabled (not .Values.monitoring.enabled) }}
+{{- fail "monitoring.prometheusRule requires monitoring.enabled" }}
+{{- end }}
+{{- if .Values.monitoring.enabled }}
+{{- if or (not .Values.networkPolicy.enabled) (empty .Values.monitoring.namespaceSelector) (empty .Values.monitoring.podSelector) }}
+{{- fail "internal monitoring requires NetworkPolicy and explicit nonempty scraper namespace/pod selectors" }}
+{{- end }}
+{{- if ne (int .Values.monitoring.port) 8081 }}
+{{- fail "the isolated management listener must use port 8081" }}
+{{- end }}
+{{- if or (hasKey .Values.backendConfig "MANAGEMENT_SERVER_PORT") (hasKey .Values.backendConfig "NEWS_OPERATIONS_INTERNAL_METRICS_ENABLED") }}
+{{- fail "monitoring owns MANAGEMENT_SERVER_PORT and NEWS_OPERATIONS_INTERNAL_METRICS_ENABLED" }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-metrics
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend-metrics
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "nsangusa.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+  ports:
+    - name: management
+      port: {{ .Values.monitoring.port }}
+      targetPort: management
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-metrics
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.monitoring.namespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.monitoring.podSelector | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.monitoring.port }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-operational-rules
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+data:
+  nsangusa-rules.yaml: |
+    {{- include "nsangusa.operationalRules" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nsangusa.fullname" . }}-operational-dashboard
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.grafana.sidecarLabel }}
+    {{ . | quote }}: "1"
+    {{- end }}
+data:
+  nsangusa-operations.json: |
+    {{- include "nsangusa.operationalDashboard" . | nindent 4 }}
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+{{- if not (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor") }}
+{{- fail "ServiceMonitor CRD absent: install/qualify the operator or leave serviceMonitor disabled" }}
+{{- end }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "nsangusa.fullname" . }}
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "nsangusa.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend-metrics
+  endpoints:
+    - port: management
+      path: /actuator/prometheus
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout }}
+      honorLabels: false
+      relabelings:
+        - targetLabel: job
+          replacement: nsangusa-backend
+{{- end }}
+{{- if .Values.monitoring.prometheusRule.enabled }}
+{{- if not (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule") }}
+{{- fail "PrometheusRule CRD absent: mount the rules ConfigMap or qualify an operator first" }}
+{{- end }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "nsangusa.fullname" . }}
+  labels:
+    {{- include "nsangusa.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- include "nsangusa.operationalRules" . | nindent 2 }}
+{{- end }}
+{{- end }}

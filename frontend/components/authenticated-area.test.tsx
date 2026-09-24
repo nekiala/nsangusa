@@ -33,4 +33,13 @@ describe("AuthenticatedArea", () => {
     render(<AuthenticatedArea staff><h1>Article editor</h1></AuthenticatedArea>);
     expect(await screen.findByRole("heading", { name: "Staff access is required." })).toBeInTheDocument();
   });
+
+  it("admits moderators only to explicitly permitted staff sections", async () => {
+    vi.spyOn(api.auth, "me").mockResolvedValue({ id: "1", email: "moderator@example.test", displayName: "Moderator", roles: ["MODERATOR"] });
+    const { rerender } = render(<AuthenticatedArea allowedRoles={["MODERATOR", "ADMINISTRATOR"]}><h1>Moderation queue</h1></AuthenticatedArea>);
+    expect(await screen.findByRole("heading", { name: "Moderation queue" })).toBeVisible();
+    rerender(<AuthenticatedArea allowedRoles={["ADMINISTRATOR"]}><h1>User administration</h1></AuthenticatedArea>);
+    expect(await screen.findByRole("heading", { name: "Staff access is required." })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "User administration" })).toBeNull();
+  });
 });

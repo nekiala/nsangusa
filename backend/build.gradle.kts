@@ -23,9 +23,11 @@ repositories {
 extra["springModulithVersion"] = "2.1.1"
 extra["testcontainersVersion"] = "2.0.5"
 extra["awsSdkVersion"] = "2.54.10"
+extra["tomcat.version"] = "11.0.25"
 
 dependencies {
   implementation("org.springframework.boot:spring-boot-starter-actuator")
+  implementation("org.springframework.boot:spring-boot-starter-cache")
   implementation("org.springframework.boot:spring-boot-starter-data-jpa")
   implementation("org.springframework.boot:spring-boot-starter-data-redis")
   implementation("org.springframework.boot:spring-boot-starter-flyway")
@@ -39,18 +41,16 @@ dependencies {
   implementation("org.springframework.boot:spring-boot-starter-webmvc")
   implementation("org.flywaydb:flyway-database-postgresql")
   implementation("org.owasp.encoder:encoder:1.4.0")
-  implementation("org.bouncycastle:bcprov-jdk18on:1.82")
+  implementation("org.bouncycastle:bcprov-jdk18on:1.85")
   implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0")
   implementation(platform("software.amazon.awssdk:bom:${property("awsSdkVersion")}"))
   implementation("software.amazon.awssdk:s3")
   implementation("org.springframework.modulith:spring-modulith-events-api")
   implementation("org.springframework.modulith:spring-modulith-observability-api")
   implementation("org.springframework.modulith:spring-modulith-starter-core")
-  implementation("org.springframework.modulith:spring-modulith-starter-jpa")
   runtimeOnly("org.postgresql:postgresql")
   runtimeOnly("io.micrometer:micrometer-registry-prometheus")
   runtimeOnly("org.springframework.modulith:spring-modulith-actuator")
-  runtimeOnly("org.springframework.modulith:spring-modulith-events-kafka")
   runtimeOnly("org.springframework.modulith:spring-modulith-observability-core")
   runtimeOnly("org.springframework.modulith:spring-modulith-runtime")
   testImplementation("org.springframework.boot:spring-boot-starter-actuator-test")
@@ -66,6 +66,7 @@ dependencies {
   testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
   testImplementation("org.springframework.modulith:spring-modulith-starter-test")
   testImplementation("com.tngtech.archunit:archunit-junit5:1.4.2")
+  testImplementation("com.networknt:json-schema-validator:1.5.9")
   testImplementation(platform("org.testcontainers:testcontainers-bom:${property("testcontainersVersion")}"))
   testImplementation("org.testcontainers:testcontainers-junit-jupiter")
   testImplementation("org.testcontainers:testcontainers-postgresql")

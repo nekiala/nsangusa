@@ -1,6 +1,8 @@
 package com.nsangusa.news.integration.internal;
 
 import java.net.URI;
+import java.time.Duration;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -23,7 +25,7 @@ class ProductionConfigurationValidator implements ApplicationRunner {
           "MAIL_HOST",
           "MAIL_USERNAME",
           "MAIL_PASSWORD",
-          "AI_API_KEY",
+          "AI_CREDENTIAL_MASTER_KEY",
           "AI_BASE_URL",
           "IMAGE_API_KEY",
           "IMAGE_BASE_URL",
@@ -34,8 +36,10 @@ class ProductionConfigurationValidator implements ApplicationRunner {
           "S3_SECRET_KEY",
           "X_BEARER_TOKEN",
           "X_API_BASE_URL",
+          "PROVIDER_MODE",
           "NEWSLETTER_TOKEN_SECRET",
           "NEWSLETTER_WEBHOOK_SECRET",
+          "NEWSLETTER_PROVIDER",
           "NEWSLETTER_FROM_ADDRESS",
           "OIDC_ISSUER_URI",
           "OIDC_CLIENT_ID",
@@ -70,6 +74,27 @@ class ProductionConfigurationValidator implements ApplicationRunner {
       throw new IllegalStateException(
           "Production configuration is missing required secure values: " + missing);
     }
+    if (!"production".equals(environment.getRequiredProperty("PROVIDER_MODE"))) {
+      throw new IllegalStateException("PROVIDER_MODE must be production in production");
+    }
+    try {
+      if (java.util.Base64.getDecoder()
+              .decode(environment.getRequiredProperty("AI_CREDENTIAL_MASTER_KEY"))
+              .length
+          != 32) {
+        throw new IllegalArgumentException();
+      }
+    } catch (IllegalArgumentException exception) {
+      throw new IllegalStateException(
+          "AI_CREDENTIAL_MASTER_KEY must be base64 encoding of exactly 32 bytes");
+    }
+    if (!environment.getProperty(
+        "news.providers.ai.live-enabled",
+        Boolean.class,
+        environment.getProperty("AI_LIVE_ENABLED", Boolean.class, false))) {
+      throw new IllegalStateException(
+          "AI_LIVE_ENABLED must explicitly enable live AI in production; administrator activation is also required");
+    }
     URI publicBaseUrl = URI.create(environment.getRequiredProperty("PUBLIC_BASE_URL"));
     if (!"https".equalsIgnoreCase(publicBaseUrl.getScheme())) {
       throw new IllegalStateException("PUBLIC_BASE_URL must use HTTPS in production");
@@ -88,9 +113,36 @@ class ProductionConfigurationValidator implements ApplicationRunner {
     requireHttps("AI_BASE_URL");
     requireHttps("IMAGE_BASE_URL");
     requireHttps("S3_ENDPOINT");
+    if (!"AES256"
+        .equals(environment.getProperty("news.storage.server-side-encryption", "AES256"))) {
+      throw new IllegalStateException(
+          "S3 server-side encryption must remain enabled in production");
+    }
     requireHttps("X_API_BASE_URL");
     requireSecretLength("NEWSLETTER_TOKEN_SECRET");
     requireSecretLength("NEWSLETTER_WEBHOOK_SECRET");
+    if (!environment.getRequiredProperty("NEWSLETTER_WEBHOOK_SECRET").startsWith("whsec_")) {
+      throw new IllegalStateException(
+          "NEWSLETTER_WEBHOOK_SECRET must be a Resend whsec_ signing secret in production");
+    }
+    if (!"resend".equalsIgnoreCase(environment.getRequiredProperty("NEWSLETTER_PROVIDER"))) {
+      throw new IllegalStateException(
+          "NEWSLETTER_PROVIDER must support provider-side idempotency in production");
+    }
+    Duration idempotencyWindow;
+    try {
+      idempotencyWindow =
+          Duration.parse(environment.getProperty("NEWSLETTER_IDEMPOTENCY_WINDOW", "PT24H"));
+    } catch (DateTimeParseException exception) {
+      throw new IllegalStateException(
+          "NEWSLETTER_IDEMPOTENCY_WINDOW must be a valid ISO-8601 duration", exception);
+    }
+    if (idempotencyWindow.isNegative()
+        || idempotencyWindow.isZero()
+        || idempotencyWindow.compareTo(Duration.ofHours(24)) > 0) {
+      throw new IllegalStateException(
+          "NEWSLETTER_IDEMPOTENCY_WINDOW must be positive and no greater than Resend's 24-hour guarantee");
+    }
   }
 
   private void requireSecretLength(String key) {

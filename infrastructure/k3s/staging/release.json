@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.36.4+k3s1",
+  "platform": "linux/amd64",
+  "binaryUrl": "https://github.com/k3s-io/k3s/releases/download/v1.36.4%2Bk3s1/k3s",
+  "binarySha256": "835873f37245fc615f547a2fe2af9402a347875f13fa64a1f136de644955ea3f",
+  "checksumsUrl": "https://github.com/k3s-io/k3s/releases/download/v1.36.4%2Bk3s1/sha256sum-amd64.txt",
+  "checksumsSha256": "db1dbdc92f0cb5ccd361348a113f4dff82b1f9194175e5993efc37224a04ba4d",
+  "releaseUrl": "https://github.com/k3s-io/k3s/releases/tag/v1.36.4%2Bk3s1"
+}

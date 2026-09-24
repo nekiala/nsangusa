@@ -34,6 +34,31 @@ class IdentityOidcUserService implements OAuth2UserService<OidcUserRequest, Oidc
     account.roles.stream()
         .map(role -> new SimpleGrantedAuthority("ROLE_" + role.name()))
         .forEach(authorities::add);
-    return new DefaultOidcUser(authorities, oidcUser.getIdToken(), oidcUser.getUserInfo(), "email");
+    return new AccountOidcPrincipal(account, authorities, oidcUser);
+  }
+
+  private static final class AccountOidcPrincipal extends DefaultOidcUser
+      implements IdentityPrincipal {
+    private final String accountEmail;
+    private final String accountSecurityStamp;
+
+    private AccountOidcPrincipal(
+        UserAccount account,
+        java.util.Collection<? extends GrantedAuthority> authorities,
+        OidcUser user) {
+      super(authorities, user.getIdToken(), user.getUserInfo(), "email");
+      accountEmail = account.email;
+      accountSecurityStamp = IdentityPrincipal.securityStamp(account);
+    }
+
+    @Override
+    public String getName() {
+      return accountEmail;
+    }
+
+    @Override
+    public String accountSecurityStamp() {
+      return accountSecurityStamp;
+    }
   }
 }

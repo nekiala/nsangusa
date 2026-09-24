@@ -12,6 +12,10 @@ import java.util.UUID;
 class MediaAsset {
   @Id UUID id;
   UUID articleId;
+  UUID generationId;
+
+  @Column(length = 20)
+  String variantName;
 
   @Column(nullable = false, unique = true)
   String objectKey;
@@ -31,9 +35,18 @@ class MediaAsset {
   protected MediaAsset() {}
 
   MediaAsset(
-      UUID articleId, String objectKey, String mediaType, int width, int height, String sha256) {
+      UUID articleId,
+      UUID generationId,
+      String variantName,
+      String objectKey,
+      String mediaType,
+      int width,
+      int height,
+      String sha256) {
     this.id = UUID.randomUUID();
     this.articleId = articleId;
+    this.generationId = generationId;
+    this.variantName = variantName;
     this.objectKey = objectKey;
     this.mediaType = mediaType;
     this.width = width;

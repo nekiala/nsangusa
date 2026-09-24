@@ -85,7 +85,9 @@ class CommentGlobalSettings {
     if (editingWindowMinutes < 0 || editingWindowMinutes > 10_080) {
       throw new IllegalArgumentException("Editing window must be between 0 and 10080 minutes");
     }
-    if (reviewSpamThreshold < 0
+    if (!Double.isFinite(reviewSpamThreshold)
+        || !Double.isFinite(rejectSpamThreshold)
+        || reviewSpamThreshold < 0
         || reviewSpamThreshold > 1
         || rejectSpamThreshold < 0
         || rejectSpamThreshold > 1

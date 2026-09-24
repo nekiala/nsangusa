@@ -3,7 +3,6 @@ package com.nsangusa.news.search.internal;
 import com.nsangusa.news.search.SearchService;
 import com.nsangusa.news.search.SearchService.Facet;
 import com.nsangusa.news.search.SearchService.SearchPage;
-import java.time.Duration;
 import java.util.List;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
@@ -57,8 +56,6 @@ class SearchController {
   }
 
   private static <T> ResponseEntity<T> publicResponse(T body) {
-    return ResponseEntity.ok()
-        .cacheControl(CacheControl.maxAge(Duration.ofSeconds(30)).cachePublic())
-        .body(body);
+    return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body);
   }
 }

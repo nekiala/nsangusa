@@ -1,6 +1,7 @@
 package com.nsangusa.news.sourceingestion;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -47,6 +48,14 @@ public interface SourceIngestionService {
 
   void reconcileCompliance(UUID sourcePostId, boolean successful, String notes, UUID actorId);
 
+  void reconcileProviderPost(UUID sourcePostId, ProviderPostSnapshot snapshot);
+
+  void applyProviderDeletion(UUID sourcePostId, String reason, Instant checkedAt);
+
+  void markProviderChecked(UUID sourcePostId, Instant checkedAt);
+
+  void assertSourcesPublishable(Collection<UUID> sourcePostIds);
+
   void markSync(
       UUID accountId,
       String lastPostId,
@@ -55,12 +64,53 @@ public interface SourceIngestionService {
       Integer rateLimitRemaining,
       String error);
 
-  UUID discoverPost(
+  default UUID discoverPost(
       UUID monitoredAccountId,
       String postId,
       String canonicalUrl,
       String permittedText,
-      Instant publishedAt);
+      Instant publishedAt) {
+    return discoverPost(
+        monitoredAccountId,
+        postId,
+        postId,
+        null,
+        canonicalUrl,
+        permittedText,
+        publishedAt,
+        List.of());
+  }
+
+  UUID discoverPost(
+      UUID monitoredAccountId,
+      String postId,
+      String editChainId,
+      String conversationId,
+      String canonicalUrl,
+      String permittedText,
+      Instant publishedAt,
+      List<SourceRelationshipInput> relationships);
+
+  record ProviderPostSnapshot(
+      String postId,
+      String editChainId,
+      String canonicalUrl,
+      String permittedText,
+      String conversationId,
+      Instant observedAt,
+      List<SourceRelationshipInput> relationships) {
+    public ProviderPostSnapshot(
+        String postId,
+        String canonicalUrl,
+        String permittedText,
+        String conversationId,
+        Instant observedAt,
+        List<SourceRelationshipInput> relationships) {
+      this(postId, postId, canonicalUrl, permittedText, conversationId, observedAt, relationships);
+    }
+  }
+
+  record SourceRelationshipInput(String relatedPostId, String relationshipType) {}
 
   record AccountView(
       UUID id,

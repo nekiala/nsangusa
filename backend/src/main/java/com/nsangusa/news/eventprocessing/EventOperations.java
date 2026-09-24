@@ -8,11 +8,21 @@ import java.util.UUID;
 public interface EventOperations {
   List<FailedEventView> listFailed(String status, int limit);
 
+  FailedEventPage failedPage(String status, int page, int size);
+
+  ReplayPage replays(int page, int size);
+
+  ReplayRequestView confirmReplay(UUID previewId, UUID actorId);
+
   ReplayRequestView requestReplay(ReplayCommand command);
 
   ReplayRequestView getReplay(UUID requestId);
 
   List<ReplayRecordView> listReplayRecords(UUID requestId);
+
+  record FailedEventPage(List<FailedEventView> items, int page, int size, long total) {}
+
+  record ReplayPage(List<ReplayRequestView> items, int page, int size, long total) {}
 
   record FailedEventView(
       UUID id,

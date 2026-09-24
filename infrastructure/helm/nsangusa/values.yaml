@@ -1,6 +1,27 @@
 nameOverride: ""
 fullnameOverride: ""
 
+monitoring:
+  enabled: false
+  runbookUrl: docs/reliability-operations.md
+  # Separate internal listener; never add this port/path to the public ingress.
+  port: 8081
+  namespaceSelector:
+    kubernetes.io/metadata.name: monitoring
+  podSelector:
+    app.kubernetes.io/name: prometheus
+  serviceMonitor:
+    enabled: false
+    additionalLabels: {}
+    interval: 30s
+    scrapeTimeout: 10s
+  prometheusRule:
+    enabled: false
+    additionalLabels: {}
+  grafana:
+    # ConfigMap is always available when monitoring is enabled; no sidecar is assumed.
+    sidecarLabel: ""
+
 global:
   environment: development
   imagePullSecrets: []
@@ -21,6 +42,8 @@ backendConfig:
   REDIS_PORT: "6379"
   REDIS_USERNAME: ""
   REDIS_SSL_ENABLED: "true"
+  REDIS_CONNECT_TIMEOUT: 2s
+  REDIS_COMMAND_TIMEOUT: 2s
   COOKIE_SECURE: "true"
   MAIL_HOST: ""
   MAIL_PORT: "587"
@@ -32,22 +55,44 @@ backendConfig:
   PROVIDER_MODE: fake
   AI_BASE_URL: https://api.openai.com
   AI_MODEL: gpt-5-mini
+  AI_LIVE_ENABLED: "false"
   AI_PROMPT_VERSION: editorial-v1
+  AI_MAX_CONCURRENT_REQUESTS: "8"
+  AI_MAX_ATTEMPTS: "3"
+  AI_RETRY_INITIAL_DELAY: 250ms
+  AI_RETRY_MAX_DELAY: 2s
+  AI_CIRCUIT_FAILURE_THRESHOLD: "5"
+  AI_CIRCUIT_OPEN_DURATION: 30s
+  AI_INPUT_COST_PER_MILLION: "0"
+  AI_OUTPUT_COST_PER_MILLION: "0"
   IMAGE_BASE_URL: https://api.openai.com
   IMAGE_MODEL: gpt-image-1
   S3_ENDPOINT: ""
   S3_REGION: us-east-1
   S3_BUCKET: news-media
   PUBLICATION_POLICY: HUMAN_REVIEW_ALWAYS
+  AUTO_PUBLISH_CONFIDENCE: "0.95"
+  AUTO_PUBLISH_TOPIC_RULES: ""
+  STORY_CLUSTERING_WINDOW: PT6H
+  STORY_SIMILARITY_THRESHOLD: "0.30"
+  STORY_MAX_SOURCES: "10"
+  STORY_QUIET_PERIOD: PT2M
+  STORY_DISPATCH_INTERVAL: "30000"
+  STORY_DISPATCH_BATCH_SIZE: "50"
+  STORY_MAX_SOURCE_MATERIAL_CHARS: "40000"
   COMMENTS_ENABLED: "true"
   COMMENTS_REQUIRE_APPROVAL: "true"
   NEWSLETTER_FROM_ADDRESS: news@example.invalid
+  NEWSLETTER_PROVIDER: local-smtp
+  NEWSLETTER_IDEMPOTENCY_WINDOW: PT24H
+  NEWSLETTER_ATTEMPT_LEASE: PT10M
   OIDC_ISSUER_URI: ""
   OIDC_CLIENT_ID: ""
   OIDC_SUCCESS_URL: /
   OIDC_REQUIRE_VERIFIED_EMAIL: "true"
   OIDC_ROLES_CLAIM: roles
   X_API_BASE_URL: https://api.x.com
+  X_RECONCILIATION_LIMIT: "100"
 
 frontendConfig:
   NODE_ENV: production
@@ -58,7 +103,7 @@ frontendConfig:
 secret:
   existingSecret: ""
   env: {}
-  # Expected keys include DATABASE_USERNAME, DATABASE_PASSWORD, AI_API_KEY,
+  # Expected keys include DATABASE_USERNAME, DATABASE_PASSWORD, AI_CREDENTIAL_MASTER_KEY,
   # IMAGE_API_KEY, S3_ACCESS_KEY, S3_SECRET_KEY, X_BEARER_TOKEN,
   # NEWSLETTER_TOKEN_SECRET, NEWSLETTER_WEBHOOK_SECRET, OIDC_CLIENT_SECRET
   # MAIL_PASSWORD, KAFKA_SASL_JAAS_CONFIG, and REDIS_PASSWORD.

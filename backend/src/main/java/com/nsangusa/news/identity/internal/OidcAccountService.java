@@ -51,7 +51,9 @@ class OidcAccountService {
       UserAccount user = activeUser(identity.userId);
       user.addRoles(roles.map(claims));
       identity.recordLogin(authenticatedAt);
-      newsletter.linkAndFind(user.id, user.email);
+      if (user.emailVerified) {
+        newsletter.linkAndFind(user.id, user.email);
+      }
       return user;
     }
 
@@ -90,7 +92,9 @@ class OidcAccountService {
 
     identities.save(
         new ExternalIdentity(user.id, normalizedIssuer, normalizedSubject, email, authenticatedAt));
-    newsletter.linkAndFind(user.id, email);
+    if (user.emailVerified) {
+      newsletter.linkAndFind(user.id, email);
+    }
     audit.record(
         user.id, "IDENTITY_OIDC_LINKED", "user", user.id, Map.of("issuer", normalizedIssuer));
     return user;

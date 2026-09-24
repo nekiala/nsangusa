@@ -21,12 +21,34 @@ class UnsubscribeTokenService {
   }
 
   String tokenFor(UUID subscriptionId) {
+    return sign(subscriptionId.toString());
+  }
+
+  String preferenceTokenFor(
+      UUID requestId,
+      UUID subscriptionId,
+      java.time.Instant expiresAt,
+      java.time.Instant verifiedAt) {
+    return requestId
+        + "."
+        + sign(
+            "newsletter-preferences:v1:"
+                + requestId
+                + ":"
+                + subscriptionId
+                + ":"
+                + expiresAt.getEpochSecond()
+                + ":"
+                + verifiedAt.getEpochSecond());
+  }
+
+  private String sign(String value) {
     try {
       Mac mac = Mac.getInstance("HmacSHA256");
       mac.init(new SecretKeySpec(secret, "HmacSHA256"));
       return Base64.getUrlEncoder()
           .withoutPadding()
-          .encodeToString(mac.doFinal(subscriptionId.toString().getBytes(StandardCharsets.UTF_8)));
+          .encodeToString(mac.doFinal(value.getBytes(StandardCharsets.UTF_8)));
     } catch (java.security.GeneralSecurityException exception) {
       throw new IllegalStateException("Unable to sign unsubscribe token", exception);
     }

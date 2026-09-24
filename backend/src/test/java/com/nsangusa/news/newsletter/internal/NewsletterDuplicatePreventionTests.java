@@ -13,12 +13,16 @@ import com.nsangusa.news.eventprocessing.IncomingEventReader;
 import com.nsangusa.news.eventprocessing.ProcessedEventRegistry;
 import com.nsangusa.news.integration.EventEnvelope;
 import com.nsangusa.news.integration.NewsEvents.NewsletterDispatchRequested;
+import jakarta.mail.Session;
+import jakarta.mail.internet.MimeMessage;
 import java.lang.reflect.Proxy;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -26,10 +30,113 @@ import org.springframework.mail.javamail.JavaMailSender;
 
 class NewsletterDuplicatePreventionTests {
   @Test
+  void rejectsRetryWindowBeyondProviderGuarantee() {
+    assertThatThrownBy(
+            () ->
+                new NewsletterDeliveryReservationService(
+                    mock(NewsletterDeliveryRepository.class), Duration.ofHours(25)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("24-hour guarantee");
+  }
+
+  @Test
+  void resendReceivesTheProviderIdempotencyHeader() throws Exception {
+    var sender = mock(JavaMailSender.class);
+    var message = new MimeMessage(Session.getInstance(new Properties()));
+    when(sender.createMimeMessage()).thenReturn(message);
+
+    new JavaMailDeliveryProvider(sender, "news@example.test", "resend")
+        .send(
+            "newsletter-idempotency-key", "reader@example.test", "Subject", "Text", "<p>HTML</p>");
+
+    assertThat(message.getHeader("Resend-Idempotency-Key", null))
+        .isEqualTo("newsletter-idempotency-key");
+    verify(sender).send(message);
+  }
+
+  @Test
+  void retryStopsAfterProviderIdempotencyWindowExpires() {
+    var deliveries = mock(NewsletterDeliveryRepository.class);
+    UUID subscriptionId = UUID.randomUUID();
+    UUID articleId = UUID.randomUUID();
+    String campaignKey = "article-published:" + articleId;
+    var delivery = new NewsletterDelivery(subscriptionId, articleId, campaignKey);
+    delivery.status = "failed";
+    delivery.providerIdempotencyApplied = true;
+    delivery.createdAt = Instant.now().minus(Duration.ofHours(25));
+    when(deliveries.findLockedBySubscriptionIdAndCampaignKey(subscriptionId, campaignKey))
+        .thenReturn(Optional.of(delivery));
+
+    var reservation =
+        new NewsletterDeliveryReservationService(deliveries, Duration.ofHours(24))
+            .reserve(subscriptionId, articleId, campaignKey);
+
+    assertThat(reservation).isEmpty();
+    assertThat(delivery.status).isEqualTo("reconciliation_required");
+    assertThat(delivery.failureCode).isEqualTo("provider_idempotency_window_expired");
+  }
+
+  @Test
+  void activeAttemptLeaseReusesTheSameProviderCallIdentity() {
+    var deliveries = mock(NewsletterDeliveryRepository.class);
+    UUID subscriptionId = UUID.randomUUID();
+    UUID articleId = UUID.randomUUID();
+    String campaignKey = "article-published:" + articleId;
+    var delivery = new NewsletterDelivery(subscriptionId, articleId, campaignKey);
+    UUID attemptToken = delivery.beginAttempt(Instant.now());
+    when(deliveries.findLockedBySubscriptionIdAndCampaignKey(subscriptionId, campaignKey))
+        .thenReturn(Optional.of(delivery));
+
+    var reservation =
+        new NewsletterDeliveryReservationService(deliveries, Duration.ofHours(24))
+            .reserve(subscriptionId, articleId, campaignKey);
+
+    assertThat(reservation).isPresent();
+    assertThat(reservation.orElseThrow().attemptToken()).isEqualTo(attemptToken);
+    assertThat(reservation.orElseThrow().providerIdempotencyKey())
+        .isEqualTo(delivery.providerIdempotencyKey);
+    assertThat(delivery.attemptCount).isEqualTo(1);
+  }
+
+  @Test
+  void staleAttemptCannotOverwriteSuccessfulDelivery() {
+    var delivery =
+        new NewsletterDelivery(UUID.randomUUID(), UUID.randomUUID(), "article-published:test");
+    UUID staleAttempt = delivery.beginAttempt(Instant.now().minus(Duration.ofMinutes(11)));
+    UUID currentAttempt = delivery.beginAttempt(Instant.now());
+
+    assertThat(delivery.delivered(currentAttempt, "message-1")).isTrue();
+    assertThat(delivery.failed(staleAttempt, "provider_error")).isFalse();
+    assertThat(delivery.status).isEqualTo("delivered");
+    assertThat(delivery.providerMessageId).isEqualTo("message-1");
+  }
+
+  @Test
+  void legacyAttemptWithoutProviderIdempotencyRequiresReconciliation() {
+    var deliveries = mock(NewsletterDeliveryRepository.class);
+    UUID subscriptionId = UUID.randomUUID();
+    UUID articleId = UUID.randomUUID();
+    String campaignKey = "article-published:" + articleId;
+    var delivery = new NewsletterDelivery(subscriptionId, articleId, campaignKey);
+    delivery.status = "failed";
+    delivery.attemptCount = 1;
+    when(deliveries.findLockedBySubscriptionIdAndCampaignKey(subscriptionId, campaignKey))
+        .thenReturn(Optional.of(delivery));
+
+    var reservation =
+        new NewsletterDeliveryReservationService(deliveries, Duration.ofHours(24))
+            .reserve(subscriptionId, articleId, campaignKey);
+
+    assertThat(reservation).isEmpty();
+    assertThat(delivery.status).isEqualTo("reconciliation_required");
+    assertThat(delivery.failureCode).isEqualTo("provider_idempotency_not_confirmed");
+  }
+
+  @Test
   void duplicateSubscriptionIsRejectedAfterEmailNormalization() {
     var subscriptions = mock(NewsletterSubscriptionRepository.class);
     var deliveries = mock(NewsletterDeliveryRepository.class);
-    var mail = mock(JavaMailSender.class);
+    var mail = mock(EmailDeliveryProvider.class);
     when(subscriptions.findByEmail("reader@example.com"))
         .thenReturn(
             Optional.of(
@@ -46,13 +153,14 @@ class NewsletterDuplicatePreventionTests {
             deliveries,
             new UnsubscribeTokenService("a-secret-that-is-at-least-32-characters"),
             mail,
+            mock(com.nsangusa.news.audit.AuditService.class),
             "https://news.example.test");
 
     assertThatThrownBy(() -> service.subscribe(" Reader@Example.com ", "footer", "immediate"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Subscription already exists");
     verify(subscriptions, never()).save(any());
-    verify(mail, never()).send(any(org.springframework.mail.SimpleMailMessage.class));
+    org.mockito.Mockito.verifyNoInteractions(mail);
   }
 
   @Test
@@ -72,14 +180,18 @@ class NewsletterDuplicatePreventionTests {
                     event.payload().campaignKey(), event.payload().articleId(), "immediate")));
     when(fixture.subscriptions.findByStatusAndFrequencyIn("confirmed", List.of("immediate", "all")))
         .thenReturn(List.of(subscription));
-    when(fixture.deliveries.existsBySubscriptionIdAndCampaignKey(
+    var existing =
+        new NewsletterDelivery(
+            subscription.id, event.payload().articleId(), event.payload().campaignKey());
+    existing.status = "delivered";
+    when(fixture.deliveries.findLockedBySubscriptionIdAndCampaignKey(
             subscription.id, event.payload().campaignKey()))
-        .thenReturn(true);
+        .thenReturn(Optional.of(existing));
 
     fixture.consumer.dispatch("event");
 
     verify(fixture.deliveries, never()).saveAndFlush(any());
-    verify(fixture.mail, never()).send(any(), any(), any(), any());
+    verify(fixture.mail, never()).send(any(), any(), any(), any(), any());
     verify(fixture.processed).markProcessed(event.eventId(), "newsletter-delivery-v1");
   }
 
@@ -105,7 +217,7 @@ class NewsletterDuplicatePreventionTests {
 
     fixture.consumer.dispatch("event");
 
-    verify(fixture.mail, never()).send(any(), any(), any(), any());
+    verify(fixture.mail, never()).send(any(), any(), any(), any(), any());
     verify(fixture.processed).markProcessed(event.eventId(), "newsletter-delivery-v1");
   }
 
@@ -124,9 +236,10 @@ class NewsletterDuplicatePreventionTests {
                 NewsletterDeliveryRepository.class.getClassLoader(),
                 new Class<?>[] {NewsletterDeliveryRepository.class},
                 (proxy, method, arguments) -> {
-                  if (method.getName().equals("existsBySubscriptionIdAndCampaignKey")) {
-                    return deliveryStore.containsKey(
-                        new DeliveryKey((UUID) arguments[0], (String) arguments[1]));
+                  if (method.getName().equals("findLockedBySubscriptionIdAndCampaignKey")) {
+                    return Optional.ofNullable(
+                        deliveryStore.get(
+                            new DeliveryKey((UUID) arguments[0], (String) arguments[1])));
                   }
                   if (method.getName().equals("saveAndFlush")) {
                     var delivery = (NewsletterDelivery) arguments[0];
@@ -134,7 +247,7 @@ class NewsletterDuplicatePreventionTests {
                         new DeliveryKey(delivery.subscriptionId, delivery.campaignKey), delivery);
                     return delivery;
                   }
-                  if (method.getName().equals("findById")) {
+                  if (method.getName().equals("findLockedById")) {
                     return deliveryStore.values().stream()
                         .filter(delivery -> delivery.id.equals(arguments[0]))
                         .findFirst();
@@ -240,14 +353,21 @@ class NewsletterDuplicatePreventionTests {
 
   private static final class FailsAfterAcceptanceProvider implements EmailDeliveryProvider {
     private int acceptedMessages;
+    private final Map<String, String> accepted = new HashMap<>();
 
     @Override
-    public String send(String recipient, String subject, String text, String html) {
+    public String send(
+        String idempotencyKey, String recipient, String subject, String text, String html) {
+      if (accepted.containsKey(idempotencyKey)) {
+        return accepted.get(idempotencyKey);
+      }
       acceptedMessages++;
+      String messageId = "message-" + acceptedMessages;
+      accepted.put(idempotencyKey, messageId);
       if (acceptedMessages == 1) {
         throw new IllegalStateException("response lost after provider acceptance");
       }
-      return "message-" + acceptedMessages;
+      return messageId;
     }
   }
 }

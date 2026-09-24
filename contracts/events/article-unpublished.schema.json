@@ -1,14 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://nsangusa.example/contracts/events/article-unpublished.schema.json",
+  "$id": "https://contracts.nsangusa.invalid/events/article-unpublished.schema.json",
   "title": "ArticleUnpublished",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["articleId"],
-  "properties": {
-    "articleId": {
-      "type": "string",
-      "format": "uuid"
+  "allOf": [
+    {"$ref": "envelope.schema.json"},
+    {
+      "type": "object",
+      "properties": {
+        "eventType": {"const": "ArticleUnpublished"},
+        "schemaVersion": {"const": 1},
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["articleId"],
+          "properties": {"articleId": {"type": "string", "format": "uuid"}}
+        }
+      }
     }
-  }
+  ]
 }

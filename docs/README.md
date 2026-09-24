@@ -1,6 +1,10 @@
-# Nsangusa engineering baseline
+# Nsangusa engineering documentation
 
-Verified against the requested version baseline on **2026-09-02**:
+Completion baseline assessed on **2026-09-12**. The application is not yet feature-complete or
+production-qualified. Start with the [completion matrix](completion-matrix.md) and
+[implementation status](implementation-status.md).
+
+Versions currently recorded in the repository:
 
 | Area | Baseline |
 |---|---|
@@ -8,10 +12,13 @@ Verified against the requested version baseline on **2026-09-02**:
 | Web | Next.js 16.3.4, React 19.2.8, Node.js 24.20.0 LTS |
 | Data/messaging | PostgreSQL 18, Redis 8.10, Kafka 4.3.1 |
 
-These are deployment requirements, not claims that every provider or registry exposes every feature/tag. Pin immutable image digests and verify vendor compatibility before promotion.
+The [version matrix](version-matrix.md) records the existing 2026-09-06 verification claim.
+The completion assessment did not revalidate release availability or compatibility; official
+provenance and immutable artifact qualification remain required before promotion.
 
 Documents:
 
+- [Completion matrix and approval checkpoints](completion-matrix.md)
 - [Requirements and assumptions](requirements.md)
 - [Architecture and ownership](architecture.md)
 - [Data model and retention](data-model.md)

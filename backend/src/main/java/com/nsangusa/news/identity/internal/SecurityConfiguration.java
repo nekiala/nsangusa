@@ -4,6 +4,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -39,14 +40,7 @@ class SecurityConfiguration {
               .map(role -> "ROLE_" + role.name())
               .map(org.springframework.security.core.authority.SimpleGrantedAuthority::new)
               .toList();
-      return new org.springframework.security.core.userdetails.User(
-          user.email,
-          user.passwordHash,
-          user.enabled && user.emailVerified && user.localCredentialsEnabled,
-          true,
-          true,
-          !user.isLocked(java.time.Instant.now()),
-          authorities);
+      return new LocalAccountPrincipal(user, authorities);
     };
   }
 
@@ -57,7 +51,10 @@ class SecurityConfiguration {
       IdentityOidcUserService oidcUsers,
       LoginSecurityService loginSecurity,
       IdentityProperties properties,
-      ObjectProvider<ClientRegistrationRepository> clientRegistrations)
+      ObjectProvider<IdentitySessionValidityFilter> sessionValidity,
+      ObjectProvider<org.springframework.security.core.session.SessionRegistry> sessionRegistry,
+      ObjectProvider<ClientRegistrationRepository> clientRegistrations,
+      Environment environment)
       throws Exception {
     var csrf = CookieCsrfTokenRepository.withHttpOnlyFalse();
     csrf.setCookieName("XSRF-TOKEN");
@@ -81,15 +78,28 @@ class SecurityConfiguration {
                         "/api/v1/auth/register",
                         "/api/v1/auth/csrf",
                         "/api/v1/auth/verify-email",
+                        "/api/v1/auth/verification/request",
                         "/api/v1/auth/password-reset/**",
                         "/actuator/health/**",
                         "/api/openapi/**",
                         "/api/docs/**",
                         "/swagger-ui/**")
                     .permitAll()
+                    .requestMatchers(new InternalManagementRequests(environment))
+                    .permitAll()
+                    .requestMatchers("/actuator/**")
+                    .hasRole("ADMINISTRATOR")
                     .anyRequest()
                     .authenticated())
-        .csrf(csrfConfig -> csrfConfig.csrfTokenRepository(csrf))
+        .csrf(
+            csrfConfig ->
+                csrfConfig
+                    .csrfTokenRepository(csrf)
+                    .ignoringRequestMatchers("/api/v1/newsletter/provider-webhooks/*")
+                    .ignoringRequestMatchers(
+                        org.springframework.security.web.servlet.util.matcher
+                            .PathPatternRequestMatcher.withDefaults()
+                            .matcher(HttpMethod.POST, "/api/v1/newsletter/unsubscribe")))
         .httpBasic(basic -> {})
         .formLogin(
             form ->
@@ -100,14 +110,21 @@ class SecurityConfiguration {
             logout ->
                 logout
                     .logoutUrl("/api/v1/auth/logout")
+                    .logoutSuccessHandler(
+                        (request, response, authentication) -> response.setStatus(204))
                     .invalidateHttpSession(true)
                     .deleteCookies("SESSION", "JSESSIONID"))
         .sessionManagement(
             sessions -> {
               sessions.sessionFixation(fixation -> fixation.changeSessionId());
-              sessions
-                  .maximumSessions(properties.getMaximumSessions())
-                  .maxSessionsPreventsLogin(false);
+              var concurrency =
+                  sessions
+                      .maximumSessions(properties.getMaximumSessions())
+                      .maxSessionsPreventsLogin(false);
+              var registry = sessionRegistry.getIfAvailable();
+              if (registry != null) {
+                concurrency.sessionRegistry(registry);
+              }
             })
         .headers(
             headers ->
@@ -132,6 +149,12 @@ class SecurityConfiguration {
                             hsts.includeSubDomains(true)
                                 .preload(true)
                                 .maxAgeInSeconds(31_536_000)));
+    var validity = sessionValidity.getIfAvailable();
+    if (validity != null) {
+      http.addFilterAfter(
+          validity,
+          org.springframework.security.web.authentication.www.BasicAuthenticationFilter.class);
+    }
     if (clientRegistrations.getIfAvailable() != null) {
       http.oauth2Login(
           oauth ->

@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 class NewsletterDigestScheduler {
   private final ArticleService articles;
   private final NewsletterSubscriptionRepository subscriptions;
-  private final NewsletterDeliveryRepository deliveries;
+  private final NewsletterDeliveryReservationService deliveryReservations;
   private final NewsletterCampaignRepository campaigns;
   private final SuppressionEntryRepository suppressions;
   private final EmailDeliveryProvider email;
@@ -23,7 +23,7 @@ class NewsletterDigestScheduler {
   NewsletterDigestScheduler(
       ArticleService articles,
       NewsletterSubscriptionRepository subscriptions,
-      NewsletterDeliveryRepository deliveries,
+      NewsletterDeliveryReservationService deliveryReservations,
       NewsletterCampaignRepository campaigns,
       SuppressionEntryRepository suppressions,
       EmailDeliveryProvider email,
@@ -31,7 +31,7 @@ class NewsletterDigestScheduler {
       @Value("${news.public-base-url}") String publicBaseUrl) {
     this.articles = articles;
     this.subscriptions = subscriptions;
-    this.deliveries = deliveries;
+    this.deliveryReservations = deliveryReservations;
     this.campaigns = campaigns;
     this.suppressions = suppressions;
     this.email = email;
@@ -76,24 +76,47 @@ class NewsletterDigestScheduler {
     }
     html.append("</ul>");
     for (var subscription : subscriptions.findByStatusAndFrequencyIn("confirmed", frequencies)) {
-      if (deliveries.existsBySubscriptionIdAndCampaignKey(subscription.id, key)) {
-        continue;
-      }
       if (suppressions.existsByEmailHash(hash(subscription.email))) {
         continue;
       }
       String token = unsubscribeTokens.tokenFor(subscription.id);
       String unsubscribe =
           publicBaseUrl + "/newsletter/unsubscribe?id=" + subscription.id + "&token=" + token;
-      var delivery =
-          deliveries.saveAndFlush(
-              new NewsletterDelivery(subscription.id, recent.getFirst().id(), key));
-      delivery.delivered(
-          email.send(
-              subscription.email,
-              "Your Nsangusa " + type + " digest",
-              text + "\nUnsubscribe: " + unsubscribe,
-              html + "<p>Unsubscribe: " + org.owasp.encoder.Encode.forHtml(unsubscribe) + "</p>"));
+      var reservation = deliveryReservations.reserve(subscription.id, recent.getFirst().id(), key);
+      if (reservation.isEmpty()) {
+        continue;
+      }
+      var attempt = reservation.orElseThrow();
+      try {
+        deliveryReservations.delivered(
+            attempt.deliveryId(),
+            attempt.attemptToken(),
+            email.sendNewsletter(
+                attempt.providerIdempotencyKey(),
+                subscription.email,
+                "Your Nsangusa " + type + " digest",
+                text
+                    + "\nUnsubscribe: "
+                    + unsubscribe
+                    + "\nManage preferences: "
+                    + publicBaseUrl
+                    + "/newsletter/preferences",
+                html
+                    + "<p><a href=\""
+                    + org.owasp.encoder.Encode.forHtmlAttribute(unsubscribe)
+                    + "\">Unsubscribe</a></p><p><a href=\""
+                    + org.owasp.encoder.Encode.forHtmlAttribute(
+                        publicBaseUrl + "/newsletter/preferences")
+                    + "\">Manage preferences</a></p>",
+                publicBaseUrl
+                    + "/api/v1/newsletter/unsubscribe?id="
+                    + subscription.id
+                    + "&token="
+                    + token));
+      } catch (RuntimeException exception) {
+        deliveryReservations.failed(attempt.deliveryId(), attempt.attemptToken(), "provider_error");
+        throw exception;
+      }
     }
     campaign.complete();
   }

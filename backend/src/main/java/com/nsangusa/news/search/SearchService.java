@@ -29,6 +29,7 @@ public interface SearchService {
       String topic,
       List<String> tags,
       Instant publishedAt,
+      Instant updatedAt,
       double rank) {}
 
   record Facet(String value, long articleCount) {}

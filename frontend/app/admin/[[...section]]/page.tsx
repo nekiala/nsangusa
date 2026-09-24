@@ -1,15 +1,18 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { notFound } from "next/navigation";
 import { AdminWorkspace } from "@/components/admin-workspace";
 import { AuthenticatedArea } from "@/components/authenticated-area";
+import { StaffNavigation } from "@/components/admin/navigation";
+import { staffSections } from "@/lib/staff-navigation";
 
-const links = [["dashboard", "Operations"], ["editor", "Articles"], ["handles", "X accounts"], ["comments", "Comments"]] as const;
 type Props = { params: Promise<{ section?: string[] }> };
 export const metadata: Metadata = { title: "Staff workspace", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage({ params }: Props) {
-  const requested = (await params).section?.[0] || "dashboard";
-  const section = links.some(([slug]) => slug === requested) ? requested : "dashboard";
-  return <AuthenticatedArea staff><section className="admin-layout"><div className="shell admin-shell"><nav className="admin-nav" aria-label="Staff workspace">{links.map(([slug, label]) => <Link key={slug} href={slug === "dashboard" ? "/admin" : `/admin/${slug}`} aria-current={section === slug ? "page" : undefined}>{label}</Link>)}</nav><AdminWorkspace section={section} /></div></section></AuthenticatedArea>;
+  const segments = (await params).section || [];
+  const section = segments[0] || "dashboard";
+  const selected = staffSections.find(({ slug }) => slug === section);
+  if (!selected || segments.length > 2 || (segments.length === 2 && section !== "editor")) notFound();
+  return <AuthenticatedArea allowedRoles={selected.roles}><section className="admin-layout"><div className="shell admin-shell"><StaffNavigation section={section} /><AdminWorkspace key={segments.join("/")} section={section} id={segments[1]} /></div></section></AuthenticatedArea>;
 }

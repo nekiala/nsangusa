@@ -4,13 +4,13 @@ import com.nsangusa.news.identity.IdentityService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-import java.net.URI;
 import java.security.Principal;
 import java.util.List;
-import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -39,9 +39,8 @@ class AuthController {
 
   @PostMapping("/register")
   ResponseEntity<RegistrationResponse> register(@Valid @RequestBody RegistrationRequest request) {
-    UUID id = identity.register(request.email(), request.password(), request.displayName());
-    return ResponseEntity.created(URI.create("/api/v1/users/" + id))
-        .body(new RegistrationResponse(id, "verification_required"));
+    identity.register(request.email(), request.password(), request.displayName());
+    return ResponseEntity.accepted().body(new RegistrationResponse("verification_required"));
   }
 
   @GetMapping("/me")
@@ -54,12 +53,14 @@ class AuthController {
       Principal principal, @Valid @RequestBody ProfileUpdateRequest request) {
     return identity.updateProfile(
         principal.getName(),
-        new IdentityService.ProfileUpdate(request.displayName(), request.newsletterFrequency()));
+        new IdentityService.ProfileUpdate(
+            request.displayName(), request.newsletterFrequency(), request.expectedVersion()));
   }
 
   @GetMapping("/me/export")
   ResponseEntity<IdentityService.AccountDataExport> export(Principal principal) {
     return ResponseEntity.ok()
+        .cacheControl(org.springframework.http.CacheControl.noStore())
         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"account-data.json\"")
         .body(identity.exportData(principal.getName()));
   }
@@ -72,7 +73,7 @@ class AuthController {
     if (!"DELETE".equals(request.confirmation())) {
       throw new IllegalArgumentException("Account deletion confirmation is invalid");
     }
-    identity.deleteAccount(principal.getName());
+    identity.deleteAccount(principal.getName(), request.expectedVersion());
     var session = servletRequest.getSession(false);
     if (session != null) {
       session.invalidate();
@@ -109,6 +110,12 @@ class AuthController {
     return ResponseEntity.accepted().build();
   }
 
+  @PostMapping("/verification/request")
+  ResponseEntity<Void> requestVerification(@Valid @RequestBody PasswordResetRequest request) {
+    identity.requestVerification(request.email());
+    return ResponseEntity.accepted().build();
+  }
+
   @PostMapping("/password-reset/confirm")
   ResponseEntity<Void> resetPassword(@Valid @RequestBody PasswordResetConfirm request) {
     identity.resetPassword(request.token(), request.newPassword());
@@ -116,22 +123,25 @@ class AuthController {
   }
 
   record RegistrationRequest(
-      @Email @NotBlank String email,
+      @Email @NotBlank @Size(max = 320) String email,
       @NotBlank @Size(min = 12, max = 128) String password,
       @NotBlank @Size(max = 100) String displayName) {}
 
-  record RegistrationResponse(UUID id, String status) {}
+  record RegistrationResponse(String status) {}
 
-  record TokenRequest(@NotBlank String token) {}
+  record TokenRequest(@NotBlank @Size(max = 200) String token) {}
 
-  record PasswordResetRequest(@Email @NotBlank String email) {}
+  record PasswordResetRequest(@Email @NotBlank @Size(max = 320) String email) {}
 
   record PasswordResetConfirm(
-      @NotBlank String token, @NotBlank @Size(min = 12, max = 128) String newPassword) {}
+      @NotBlank @Size(max = 200) String token,
+      @NotBlank @Size(min = 12, max = 128) String newPassword) {}
 
   record ProfileUpdateRequest(
       @Size(min = 1, max = 100) String displayName,
-      @Pattern(regexp = "instant|daily|weekly") String newsletterFrequency) {}
+      @Pattern(regexp = "instant|immediate|daily|weekly") String newsletterFrequency,
+      @NotNull @Min(0) Long expectedVersion) {}
 
-  record AccountDeletionRequest(@NotBlank String confirmation) {}
+  record AccountDeletionRequest(
+      @NotBlank @Size(max = 6) String confirmation, @NotNull @Min(0) Long expectedVersion) {}
 }

@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 class IdentitySessionService {
+  private static final org.slf4j.Logger log =
+      org.slf4j.LoggerFactory.getLogger(IdentitySessionService.class);
   private final FindByIndexNameSessionRepository<? extends Session> sessions;
   private final UserAccountRepository users;
   private final AuditService audit;
@@ -26,7 +28,7 @@ class IdentitySessionService {
 
   List<IdentityService.UserSession> list(String email, String currentSessionId) {
     if (sessions == null) {
-      return List.of();
+      throw new IllegalStateException("Session management is unavailable");
     }
     return sessions.findByPrincipalName(email).values().stream()
         .map(
@@ -59,8 +61,32 @@ class IdentitySessionService {
   }
 
   void revokeAll(String email) {
-    if (sessions != null) {
-      sessions.findByPrincipalName(email).keySet().forEach(sessions::deleteById);
+    if (sessions == null) {
+      throw new IllegalStateException("Session management is unavailable");
     }
+    sessions.findByPrincipalName(email).keySet().forEach(sessions::deleteById);
+  }
+
+  void revokeAllAfterCommit(String email) {
+    if (!org.springframework.transaction.support.TransactionSynchronizationManager
+        .isSynchronizationActive()) {
+      revokeAll(email);
+      return;
+    }
+    org.springframework.transaction.support.TransactionSynchronizationManager
+        .registerSynchronization(
+            new org.springframework.transaction.support.TransactionSynchronization() {
+              @Override
+              public void afterCommit() {
+                try {
+                  revokeAll(email);
+                } catch (RuntimeException failure) {
+                  // The database cutoff also rejects old sessions if Redis cleanup is unavailable.
+                  log.warn(
+                      "Session cleanup failed after identity change: {}",
+                      failure.getClass().getSimpleName());
+                }
+              }
+            });
   }
 }

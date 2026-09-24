@@ -19,6 +19,9 @@ class SourcePost {
   @Column(nullable = false, unique = true)
   String postId;
 
+  @Column(nullable = false, unique = true)
+  String editChainId;
+
   @Column(nullable = false)
   String accountId;
 
@@ -36,6 +39,12 @@ class SourcePost {
 
   @Column(nullable = false)
   Instant ingestedAt;
+
+  @Column(nullable = false)
+  Instant lastSeenAt;
+
+  Instant lastCheckedAt;
+  String conversationId;
 
   @Column(nullable = false)
   String status;
@@ -65,15 +74,42 @@ class SourcePost {
       String canonicalUrl,
       String permittedText,
       Instant publishedAt) {
+    this(
+        id,
+        monitoredAccountId,
+        postId,
+        postId,
+        null,
+        accountId,
+        handle,
+        canonicalUrl,
+        permittedText,
+        publishedAt);
+  }
+
+  SourcePost(
+      UUID id,
+      UUID monitoredAccountId,
+      String postId,
+      String editChainId,
+      String conversationId,
+      String accountId,
+      String handle,
+      String canonicalUrl,
+      String permittedText,
+      Instant publishedAt) {
     this.id = id;
     this.monitoredAccountId = monitoredAccountId;
     this.postId = postId;
+    this.editChainId = editChainId;
+    this.conversationId = conversationId;
     this.accountId = accountId;
     this.handle = handle;
     this.canonicalUrl = canonicalUrl;
     this.permittedText = permittedText;
     this.publishedAt = publishedAt;
     this.ingestedAt = Instant.now();
+    this.lastSeenAt = this.ingestedAt;
     this.status = "active";
   }
 }

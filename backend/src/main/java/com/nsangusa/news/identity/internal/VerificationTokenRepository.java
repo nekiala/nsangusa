@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 interface VerificationTokenRepository extends JpaRepository<VerificationToken, UUID> {
+  @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
   Optional<VerificationToken> findByTokenHash(String tokenHash);
 
   void deleteByUserIdAndPurpose(UUID userId, String purpose);

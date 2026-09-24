@@ -1,4 +1,4 @@
 @org.springframework.modulith.ApplicationModule(
     displayName = "Administration",
-    allowedDependencies = {"eventprocessing"})
+    allowedDependencies = {"eventprocessing", "audit"})
 package com.nsangusa.news.administration;

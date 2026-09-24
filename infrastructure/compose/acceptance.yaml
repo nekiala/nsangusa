@@ -1,0 +1,50 @@
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:${ACCEPTANCE_POSTGRES_PORT:-15432}:5432"
+
+  minio:
+    ports: !override
+      - "127.0.0.1:${ACCEPTANCE_S3_PORT:-19000}:9000"
+
+  mailpit:
+    ports: !override
+      - "127.0.0.1:${ACCEPTANCE_SMTP_PORT:-11025}:1025"
+      - "127.0.0.1:${ACCEPTANCE_MAILPIT_PORT:-18026}:8025"
+
+  backend:
+    image: nsangusa-backend:acceptance-${ACCEPTANCE_RUN_ID:?Run the fullstack acceptance script}
+    environment:
+      PUBLIC_BASE_URL: http://127.0.0.1:${ACCEPTANCE_FRONTEND_PORT:-13000}
+      MANAGEMENT_SERVER_PORT: "8081"
+      NEWS_OPERATIONS_INTERNAL_METRICS_ENABLED: "true"
+      AI_LIVE_ENABLED: "false"
+    ports: !override
+      - "127.0.0.1:${ACCEPTANCE_BACKEND_PORT:-18080}:8080"
+      - "127.0.0.1:${ACCEPTANCE_MANAGEMENT_PORT:-18081}:8081"
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -ec
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8081;
+          printf 'GET /actuator/health/readiness HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3;
+          read -r status <&3;
+          [[ "$$status" == *" 200 "* ]]
+    restart: "no"
+
+  frontend:
+    image: nsangusa-frontend:acceptance-${ACCEPTANCE_RUN_ID:?Run the fullstack acceptance script}
+    build:
+      args:
+        # Runtime configuration must work without rebuilding the immutable image.
+        NSANGUSA_API_URL: http://build-time.invalid:8080
+        NEXT_PUBLIC_SITE_URL: http://build-time.invalid:3000
+    environment:
+      NSANGUSA_API_URL: http://backend:8080
+      PUBLIC_BASE_URL: http://127.0.0.1:${ACCEPTANCE_FRONTEND_PORT:-13000}
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:${ACCEPTANCE_FRONTEND_PORT:-13000}
+    ports: !override
+      - "127.0.0.1:${ACCEPTANCE_FRONTEND_PORT:-13000}:3000"
+    restart: "no"

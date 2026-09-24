@@ -1,4 +1,6 @@
 ### IntelliJ IDEA ###
+.idea/
+*.iml
 out/
 !**/src/main/**/out/
 !**/src/test/**/out/
@@ -39,3 +41,7 @@ bin/
 **/test-results/
 infrastructure/.validation/
 *.log
+/.github/artifacts/
+/.local/operational-evidence/
+/.local/operational-alert-state/
+/.local/runtime-secrets/
