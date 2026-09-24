@@ -65,7 +65,7 @@ dependencies {
   testImplementation("org.springframework.boot:spring-boot-starter-validation-test")
   testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
   testImplementation("org.springframework.modulith:spring-modulith-starter-test")
-  testImplementation("com.tngtech.archunit:archunit-junit5:1.4.2")
+  testImplementation("com.tngtech.archunit:archunit-junit5:1.5.0")
   testImplementation("com.networknt:json-schema-validator:1.5.9")
   testImplementation(platform("org.testcontainers:testcontainers-bom:${property("testcontainersVersion")}"))
   testImplementation("org.testcontainers:testcontainers-junit-jupiter")
