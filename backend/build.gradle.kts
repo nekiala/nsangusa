@@ -42,7 +42,7 @@ dependencies {
   implementation("org.flywaydb:flyway-database-postgresql")
   implementation("org.owasp.encoder:encoder:1.4.0")
   implementation("org.bouncycastle:bcprov-jdk18on:1.85")
-  implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0")
+  implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1")
   implementation(platform("software.amazon.awssdk:bom:${property("awsSdkVersion")}"))
   implementation("software.amazon.awssdk:s3")
   implementation("org.springframework.modulith:spring-modulith-events-api")
