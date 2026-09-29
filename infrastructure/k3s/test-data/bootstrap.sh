@@ -2,20 +2,12 @@
 # Bootstraps the shared-VPS `test` environment's data services and deploy identity.
 #
 # Run on the VPS as root from a copy of this directory:
-#   MINIO_IMAGE=ghcr.io/...@sha256:... MC_IMAGE=ghcr.io/...@sha256:... \
 #   DEPLOY_SSH_PUBLIC_KEY='ssh-ed25519 AAAA... nsangusa-test-deploy' ./bootstrap.sh
 #
 # Idempotent: existing CA material, credentials and Secrets are never rotated here. Generated
 # secrets stay on the server (root-only files and Kubernetes Secrets); nothing is printed.
 set -euo pipefail
 umask 077
-
-: "${MINIO_IMAGE:?MINIO_IMAGE must be a digest-pinned image reference}"
-: "${MC_IMAGE:?MC_IMAGE must be a digest-pinned image reference}"
-[[ "$MINIO_IMAGE" =~ @sha256:[0-9a-f]{64}$ && "$MC_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]] || {
-  echo "MINIO_IMAGE and MC_IMAGE must be pinned by digest" >&2
-  exit 1
-}
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 state=/etc/nsangusa-test
@@ -52,7 +44,7 @@ issue() {
     -CAcreateserial -sha256 -days 365 -extfile "$tls/$name.ext" -out "$tls/$name.crt"
   rm -f "$tls/$name.csr" "$tls/$name.ext"
 }
-for service in postgres kafka redis minio; do issue "$service"; done
+for service in postgres kafka redis seaweedfs; do issue "$service"; done
 
 # --- Credentials (generated once, hex so they are safe in URLs, JAAS and config files) ---------
 credentials="$state/credentials.env"
@@ -64,7 +56,7 @@ if [[ ! -s "$credentials" ]]; then
     printf 'REDIS_PASSWORD=%s\n' "$(openssl rand -hex 24)"
     printf 'S3_ACCESS_KEY=nsangusa%s\n' "$(openssl rand -hex 6)"
     printf 'S3_SECRET_KEY=%s\n' "$(openssl rand -hex 24)"
-    printf 'MINIO_KMS_SECRET_KEY=nsangusa-test:%s\n' "$(openssl rand -base64 32)"
+    printf 'S3_SSE_KEY=%s\n' "$(openssl rand -base64 32)"
     printf 'NEWSLETTER_TOKEN_SECRET=%s\n' "$(openssl rand -hex 32)"
     printf 'NEWSLETTER_WEBHOOK_SECRET=%s\n' "$(openssl rand -hex 32)"
   } > "$credentials"
@@ -89,7 +81,7 @@ create_secret() {
   echo "secret/$name created in $namespace"
 }
 
-for service in postgres kafka redis minio; do
+for service in postgres kafka redis seaweedfs; do
   create_secret "$data_ns" "$service-tls" generic "$service-tls" \
     --from-file=tls.crt="$tls/$service.crt" \
     --from-file=tls.key="$tls/$service.key" \
@@ -104,7 +96,7 @@ create_secret "$data_ns" test-data-credentials generic test-data-credentials \
   --from-literal=REDIS_PASSWORD="$REDIS_PASSWORD" \
   --from-literal=S3_ACCESS_KEY="$S3_ACCESS_KEY" \
   --from-literal=S3_SECRET_KEY="$S3_SECRET_KEY" \
-  --from-literal=MINIO_KMS_SECRET_KEY="$MINIO_KMS_SECRET_KEY"
+  --from-literal=S3_SSE_KEY="$S3_SSE_KEY"
 
 create_secret "$app_ns" nsangusa-test-runtime generic nsangusa-test-runtime \
   --from-literal=DATABASE_USERNAME="$DATABASE_USERNAME" \
@@ -116,19 +108,17 @@ create_secret "$app_ns" nsangusa-test-runtime generic nsangusa-test-runtime \
   --from-literal=NEWSLETTER_TOKEN_SECRET="$NEWSLETTER_TOKEN_SECRET" \
   --from-literal=NEWSLETTER_WEBHOOK_SECRET="$NEWSLETTER_WEBHOOK_SECRET"
 
-# GHCR packages are private by default. Provide a read:packages token once via stdin file.
+# The application images on GHCR are private; data services use public upstream images.
+# Place a read:packages registry credential at $state/ghcr-pull.json (root-only) beforehand.
 if [[ -s "$state/ghcr-pull.json" ]]; then
-  for namespace in "$data_ns" "$app_ns"; do
-    create_secret "$namespace" ghcr-pull generic ghcr-pull \
-      --type=kubernetes.io/dockerconfigjson \
-      --from-file=.dockerconfigjson="$state/ghcr-pull.json"
-  done
+  create_secret "$app_ns" ghcr-pull generic ghcr-pull \
+    --type=kubernetes.io/dockerconfigjson \
+    --from-file=.dockerconfigjson="$state/ghcr-pull.json"
 fi
 
 # --- Data services -------------------------------------------------------------------------
-for manifest in 10-postgres.yaml 20-kafka.yaml 30-redis.yaml 40-minio.yaml 50-mailpit.yaml; do
-  sed -e "s#MINIO_IMAGE#$MINIO_IMAGE#g" -e "s#MC_IMAGE#$MC_IMAGE#g" "$here/$manifest" \
-    | kubectl apply -f -
+for manifest in 10-postgres.yaml 20-kafka.yaml 30-redis.yaml 40-seaweedfs.yaml 50-mailpit.yaml; do
+  kubectl apply -f "$here/$manifest"
 done
 
 # --- Deploy identity: namespace-scoped ServiceAccount reached through a forward-only SSH key ---

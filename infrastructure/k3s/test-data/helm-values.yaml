@@ -34,7 +34,7 @@ backendConfig:
   SPRING_DATA_REDIS_SSL_BUNDLE: internal
   SPRING_SSL_BUNDLE_PEM_INTERNAL_TRUSTSTORE_CERTIFICATE: |
     INTERNAL_CA_PEM
-  S3_ENDPOINT: https://minio.nsangusa-test-data.svc:9000
+  S3_ENDPOINT: https://seaweedfs.nsangusa-test-data.svc:9000
   S3_SSL_BUNDLE: internal
   S3_REGION: us-east-1
   S3_BUCKET: news-media
