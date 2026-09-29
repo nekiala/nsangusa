@@ -120,6 +120,10 @@ backend:
     pullPolicy: IfNotPresent
   service:
     port: 8080
+    # NodePort exposes the Service on the node's configured nodeport-addresses (loopback on the
+    # shared VPS) for a host reverse proxy; the Ingress remains the default entry point.
+    type: ClusterIP
+    nodePort: null
   probes:
     startup:
       periodSeconds: 5
@@ -188,6 +192,10 @@ frontend:
     pullPolicy: IfNotPresent
   service:
     port: 3000
+    # NodePort exposes the Service on the node's configured nodeport-addresses (loopback on the
+    # shared VPS) for a host reverse proxy; the Ingress remains the default entry point.
+    type: ClusterIP
+    nodePort: null
   probes:
     startup:
       periodSeconds: 5
@@ -287,6 +295,11 @@ networkPolicy:
     kubernetes.io/metadata.name: kube-system
   dnsPodSelector:
     k8s-app: kube-dns
+  # Host-level reverse proxies (for example Nginx proxying to a loopback NodePort) arrive from
+  # these node addresses rather than from an ingress-controller pod.
+  hostIngress: []
+  # In-cluster dependencies selected by namespace (and optionally pod) labels.
+  backendClusterEgress: []
   backendExternalEgress: []
   frontendExternalEgress: []
   otelExternalEgress: []
