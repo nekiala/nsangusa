@@ -156,6 +156,60 @@ prove that this operation did not replace original configuration.
 Application/data-service deployment, reviewer/hosted gates, access controls and the other
 Step 5/6 qualifications remain open; this HTTPS setup is not Step 7.
 
+## Shared-VPS test environment
+
+On **2026-09-29** the owner chose to run the workflow's `test` environment on the shared VPS,
+with data services in k3s, the GitHub-hosted runner reaching the API through an SSH tunnel and
+the site behind basic auth. This is a running application for manual testing with fake
+providers, **not staging qualification**: the `test` path skips the qualification-evidence step,
+and none of the Step 5/6 gates above are closed by it.
+
+`infrastructure/k3s/test-data/` holds the manifests and `bootstrap.sh`. Data services run in
+`nsangusa-test-data` under the restricted Pod Security profile, reachable only from the
+application's backend and migration pods:
+
+| Service | Transport | Storage |
+|---|---|---|
+| PostgreSQL 18.4 | TLS; backend uses `sslmode=verify-full` | 10 Gi `local-path-retain` |
+| Kafka 4.3.1 (KRaft, one node) | SASL_SSL with PLAIN on 9094; controller/inter-broker on loopback | 10 Gi `local-path-retain` |
+| Redis 8.10.0 | TLS only; persistence off, as locally | ephemeral |
+| MinIO (rebuilt, see below) | HTTPS; static KMS key so default SSE-S3 requests work | 20 Gi `local-path-retain` |
+| Mailpit 1.27.8 | cluster-internal SMTP sink; no mail leaves the environment | ephemeral |
+
+`bootstrap.sh` runs on the VPS as root and is idempotent. It creates a private EC P-256 CA and
+per-service certificates under `/etc/nsangusa-test/tls`, generates credentials once into
+`/etc/nsangusa-test/credentials.env`, and creates the `nsangusa-test-runtime` Secret the chart
+references. It never rotates existing material; rotation means deliberately replacing the file
+and Secret, then restarting the affected workloads. The backend trusts the CA through
+configuration only: a pgjdbc single-certificate factory reading `NSANGUSA_INTERNAL_CA`, Kafka's
+PEM trust store, and a Spring SSL bundle (`internal`) used by Redis and `S3_SSL_BUNDLE`.
+
+The deploy identity is `nsangusa-deployer`: namespace `admin` in `nsangusa-test` plus get/patch
+on that one Namespace object. The workflow reaches the API as the `nsangusa-deploy` system user,
+whose root-owned `authorized_keys` entry allows only forwarding to `127.0.0.1:6443`
+(`restrict,port-forwarding,permitopen=...,command="/bin/false"`). The k3s guard is unchanged:
+the API port remains closed to the Internet.
+
+Host Nginx proxies `staging.nsangusa.com` to loopback NodePorts (frontend `30380`, backend
+`30381` for the chart's `backendPaths`) behind basic auth; see
+[`nginx/staging/https.conf`](../infrastructure/nginx/staging/https.conf). Masqueraded loopback
+NodePort traffic arrives from `cni0` (`10.42.0.1`), which `networkPolicy.hostIngress` admits.
+The protected-host baseline recorded after HTTPS must be re-recorded to include this vhost.
+
+The `test` profile seeds no accounts. Create the first administrator by registering through the
+site, confirming through Mailpit (`kubectl -n nsangusa-test-data port-forward svc/mailpit
+8025:8025` on the VPS) and granting the role once with an audited SQL statement.
+
+MinIO no longer publishes images or binaries and its repository is archived.
+[`storage-images.yml`](../.github/workflows/storage-images.yml) rebuilds the releases this
+repository pinned from their tagged commits with a supported Go toolchain, scans and signs them;
+consumers pin the resulting GHCR digests. These images receive no upstream fixes; replacing
+MinIO with a maintained S3-compatible server is an open follow-up.
+
+**Limits:** one node and failure domain, local-path volumes without backup or PITR, no
+telemetry backend (the OTel collector is disabled), OIDC not configured, and a shared
+basic-auth password rather than per-user access control.
+
 ## Configuration
 
 Non-secret endpoints and flags use a ConfigMap. Credentials and sensitive identifiers come from `existingSecret`; production should use an external secret controller/workload identity. Secret values must not be committed or placed in Helm values. Restrict egress further with platform-supported FQDN/proxy controls because Kubernetes NetworkPolicy is IP/port based.
