@@ -10,9 +10,9 @@ toolchains:
 	@cd backend && ./gradlew -q javaToolchains
 
 dependencies:
-	docker compose -f infrastructure/compose/compose.yaml up -d --wait postgres kafka redis minio mailpit otel-collector
+	docker compose -f infrastructure/compose/compose.yaml up -d --wait postgres kafka redis seaweedfs mailpit otel-collector
 	docker compose -f infrastructure/compose/compose.yaml run --rm kafka-init
-	docker compose -f infrastructure/compose/compose.yaml run --rm minio-init
+	docker compose -f infrastructure/compose/compose.yaml run --rm seaweedfs-init
 
 frontend-dependencies:
 	@test -d frontend/node_modules || (cd frontend && npm ci)

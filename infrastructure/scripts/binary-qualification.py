@@ -25,13 +25,14 @@ DEPENDENCIES = {
     "postgres": "postgres@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636",
     "redis": "redis@sha256:344e3945a0b431c8ff1eecd58c5573538126bd756f02fc7e218ddf1fc2546366",
     "kafka": "apache/kafka@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837",
-    "minio": "quay.io/minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e",
-    "minio-init": "quay.io/minio/mc@sha256:09f93f534cde415d192bb6084dd0e0ddd1715fb602f8a922ad121fd2bf0f8b44",
+    "seaweedfs": "chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d",
+    # Bucket creation uses the server image's curl rather than a separate client image.
+    "seaweedfs-init": "chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d",
     "mailpit": "axllent/mailpit@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707",
 }
-CORE = ("postgres", "redis", "kafka", "minio", "mailpit")
-SERVICES = (*CORE, "kafka-init", "minio-init", "backend", "frontend")
-VOLUMES = ("postgres", "kafka", "kafka-secrets", "kafka-config", "minio", "mailpit")
+CORE = ("postgres", "redis", "kafka", "seaweedfs", "mailpit")
+SERVICES = (*CORE, "kafka-init", "seaweedfs-init", "backend", "frontend")
+VOLUMES = ("postgres", "kafka", "kafka-secrets", "kafka-config", "seaweedfs", "mailpit")
 PROTECTED_PORTS = {
     3000, 8080, 18025, 5432, 6379, 9092, 1025, 8025, 9000, 9001, 19001, 4317, 4318, 13133
 }
@@ -314,12 +315,13 @@ def compose_document(project, images, ports, pair, flyway_enabled, http_transpor
             healthcheck={**health(["CMD-SHELL",
                 "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list >/dev/null 2>&1"]),
                 "interval": "10s", "timeout": "10s", "start_period": "20s", "retries": 18}),
-        "minio": service("minio", images["minio"]["id"], "256m",
-            command=["server", "/data"],
-            environment={"MINIO_ROOT_USER": "synthetic", "MINIO_ROOT_PASSWORD": "synthetic-binary-only",
-                         "TMPDIR": "/work", "GOMEMLIMIT": "192MiB", "GOMAXPROCS": "2"},
-            volumes=["minio-data:/data"],
-            healthcheck=health(["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"])),
+        "seaweedfs": service("seaweedfs", images["seaweedfs"]["id"], "256m",
+            command=["server", "-dir=/data", "-s3", "-s3.port=9000", "-filer.disableHttp",
+                     "-master.telemetry=false", "-master.volumeSizeLimitMB=64", "-volume.max=32"],
+            environment={"AWS_ACCESS_KEY_ID": "synthetic", "AWS_SECRET_ACCESS_KEY": "synthetic-binary-only",
+                         "GOMEMLIMIT": "192MiB", "GOMAXPROCS": "2"},
+            volumes=["seaweedfs-data:/data"],
+            healthcheck=health(["CMD", "curl", "-fsS", "http://127.0.0.1:9000/healthz"])),
         "mailpit": service("mailpit", images["mailpit"]["id"], "64m",
             environment={"MP_MAX_MESSAGES": "20", "MP_DATABASE": "/data/mailpit.db", "TMPDIR": "/work"},
             volumes=["mailpit-data:/data"], ports=[port(ports["mailpit"], 8025)],
@@ -335,11 +337,12 @@ def compose_document(project, images, ports, pair, flyway_enabled, http_transpor
                  "news.notifications.v1 news.notifications.v1.dlt; do "
                  "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 "
                  "--create --if-not-exists --topic \"$$topic\" --partitions 3 --replication-factor 1; done"])
-    services["minio-init"] = service("minio-init", images["minio-init"]["id"], "256m",
-        environment={"MC_CONFIG_DIR": "/work", "GOMEMLIMIT": "192MiB", "GOMAXPROCS": "2"},
+    services["seaweedfs-init"] = service("seaweedfs-init", images["seaweedfs-init"]["id"], "64m",
         entrypoint=["/bin/sh", "-ec"],
-        command=["mc alias set local http://minio:9000 synthetic synthetic-binary-only >/dev/null "
-                 "&& mc mb --ignore-existing local/news-media"])
+        command=["status=\"$$(curl -sS -o /dev/null -w '%{http_code}' -X PUT "
+                 "--aws-sigv4 aws:amz:us-east-1:s3 --user synthetic:synthetic-binary-only "
+                 "http://seaweedfs:9000/news-media)\"; "
+                 "case \"$$status\" in 200|409) ;; *) echo \"bucket creation failed: $$status\" >&2; exit 1 ;; esac"])
     public_url = f"http://127.0.0.1:{ports['frontend']}"
     services["backend"] = service("backend", images[f"{pair}-backend"]["id"], "1024m",
         cpus=1.0, stop_grace_period="40s", healthcheck={"disable": True},
@@ -350,7 +353,7 @@ def compose_document(project, images, ports, pair, flyway_enabled, http_transpor
             "DATABASE_PASSWORD": "synthetic-binary-only", "DATABASE_POOL_SIZE": "4",
             "KAFKA_BOOTSTRAP_SERVERS": "kafka:29092", "REDIS_HOST": "redis",
             "MAIL_HOST": "mailpit", "MAIL_PORT": "1025",
-            "S3_ENDPOINT": "http://minio:9000", "S3_ACCESS_KEY": "synthetic",
+            "S3_ENDPOINT": "http://seaweedfs:9000", "S3_ACCESS_KEY": "synthetic",
             "S3_SECRET_KEY": "synthetic-binary-only", "S3_SERVER_SIDE_ENCRYPTION": "none",
             "PUBLIC_BASE_URL": public_url, "COOKIE_SECURE": "false", "PROVIDER_MODE": "fake",
             "AI_LIVE_ENABLED": "false", "AI_API_KEY": "", "IMAGE_API_KEY": "",
@@ -486,7 +489,7 @@ class Qualification:
         return json.loads(result.stdout)[0]
 
     def resources(self):
-        ordered = ("frontend", "backend", "minio-init", "kafka-init", *reversed(CORE))
+        ordered = ("frontend", "backend", "seaweedfs-init", "kafka-init", *reversed(CORE))
         return ([("container", f"{self.project}-{name}") for name in ordered]
                 + [("volume", f"{self.project}-{name}-data") for name in VOLUMES]
                 + [("network", f"{self.project}-internal")])
@@ -508,7 +511,7 @@ class Qualification:
             expected_volumes = {
                 "postgres": {"/var/lib/postgresql"},
                 "kafka": {"/var/lib/kafka/data", "/etc/kafka/secrets", "/mnt/shared/config"},
-                "minio": {"/data"},
+                "seaweedfs": {"/data"},
             }.get(name, set())
             require(set(image["Config"].get("Volumes") or {}) <= expected_volumes,
                     f"image declares unmapped anonymous volumes; explicit owned mapping required: {name}")
@@ -550,7 +553,7 @@ class Qualification:
         self.created = True
         self.compose("up", "-d", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "180",
                      *CORE, timeout=210)
-        for name in ("kafka-init", "minio-init"):
+        for name in ("kafka-init", "seaweedfs-init"):
             self.compose("run", "--rm", "--no-deps", "--pull", "never", "--name",
                          f"{self.project}-{name}", name, timeout=180)
         network = self.inspect("network", f"{self.project}-internal")
