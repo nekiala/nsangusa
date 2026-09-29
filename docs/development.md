@@ -16,14 +16,14 @@ make dependencies
 docker compose -f infrastructure/compose/compose.yaml ps
 ```
 
-Defaults match `application.yml`: PostgreSQL `news/news/news` on `5432`; Kafka `9092`; Redis `6379`; Mailpit SMTP/UI `1025/8025`; MinIO API/UI `9000/9001`, credentials `minioadmin/minioadmin`. Init services create private bucket `news-media`, the four workflow topics, and their `.dlt` topics.
+Defaults match `application.yml`: PostgreSQL `news/news/news` on `5432`; Kafka `9092`; Redis `6379`; Mailpit SMTP/UI `1025/8025`; SeaweedFS S3 `9000`, credentials `local-access-key/local-secret-key`. Init services create private bucket `news-media`, the four workflow topics, and their `.dlt` topics.
 
 Development Redis permits connections from the Compose bridge so the host application can use its
 loopback-published port. It has no authentication locally; never expose the port or reuse this
 Compose configuration in production, where authenticated TLS Redis is mandatory.
 
 The Spring `local` profile references this Compose file and selects `news.providers.mode=fake`.
-Real X/AI/image credentials are intentionally absent. Storage remains real private S3/MinIO and
+Real X/AI/image credentials are intentionally absent. Storage remains real private S3 (SeaweedFS) and
 mail is real SMTP to Mailpit; local fakes do not replace those transports.
 
 `make dev` also starts both applications and initializes missing frontend dependencies. The local
@@ -34,8 +34,10 @@ lookup is required. Set `LOCAL_SEED=false` to disable this content seed; demo-ro
 
 Subscribe at `/newsletter` with immediate delivery, open Mailpit at `http://localhost:8025`, follow
 the confirmation link and press **Confirm subscription** before publishing. The publication email
-includes a browser unsubscribe link. Inspect the private `news-media` bucket in the MinIO console
-at `http://localhost:9001`; image previews are authenticated backend reads, not public bucket URLs.
+includes a browser unsubscribe link. Inspect the private `news-media` bucket with any S3 client
+against `http://localhost:9000` and the local credentials; SeaweedFS's unauthenticated filer HTTP
+API is disabled, so there is no browser console. Image previews are authenticated backend reads,
+not public bucket URLs.
 
 The editor includes stored revision comparison and explicit correction withdrawal/reapproval.
 Corrections keep the canonical URL and original publication date and do not send another
@@ -54,7 +56,11 @@ deployed AI selections/prompts, audit, failed events and workflow health. Queues
 selectors replace internal UUID entry. Sensitive writes use displayed versions and confirmations;
 refresh after a 409 rather than silently overwriting another user's change.
 
-Local MinIO has no KMS, so the local profile explicitly uses `S3_SERVER_SIDE_ENCRYPTION=none`.
+Local SeaweedFS runs without an SSE key, so the local profile explicitly uses
+`S3_SERVER_SIDE_ENCRYPTION=none`. Stacks created before 2026-09-29 used MinIO volumes
+(`*_minio-data`); SeaweedFS starts with a new `seaweedfs-data` volume. Before recreating such a
+preview, copy its `news-media` objects with any S3 client from the old MinIO container to the new
+SeaweedFS service, or published articles will reference missing images.
 Production requires `AES256` and a compatible encrypted storage service. Filesystem storage is
 available only when explicitly selecting `STORAGE_PROVIDER=local` and `LOCAL_MEDIA_ROOT`, under
 local/test profiles; it is not an automatic fallback for S3 failures.
@@ -73,7 +79,7 @@ docker compose -p nsangusa-preview \
 ```
 
 Open `http://localhost:3000`, with the backend at `http://localhost:8080`, Mailpit at
-`http://localhost:18025`, and the MinIO console at `http://localhost:19001`.
+`http://localhost:18025`. Object storage is not published from the preview.
 Use the README's local demo accounts. A clearly synthetic draft appears in the candidate/editor
 queues for explicit image/article review and publication. X/AI/image providers remain fake;
 PostgreSQL, Kafka, Redis, object storage and SMTP are real local services.
@@ -147,9 +153,9 @@ bash .github/scripts/fullstack-acceptance.sh
 
 The runner builds current backend/frontend images and creates a unique
 `nsangusa-acceptance-*` Compose project. It uses fake external providers, real
-PostgreSQL/Kafka/Redis/MinIO/SMTP, normal application quotas and production Next.
+PostgreSQL/Kafka/Redis/SeaweedFS S3/SMTP, normal application quotas and production Next.
 All ports bind loopback: frontend `13000`, backend `18080`, management `18081`, PostgreSQL `15432`,
-MinIO `19000`, SMTP `11025` and Mailpit `18026`. They must be free; these defaults do not
+S3 `19000`, SMTP `11025` and Mailpit `18026`. They must be free; these defaults do not
 conflict with the persistent preview. Override `ACCEPTANCE_FRONTEND_PORT`,
 `ACCEPTANCE_BACKEND_PORT`, `ACCEPTANCE_MANAGEMENT_PORT`, `ACCEPTANCE_POSTGRES_PORT`, `ACCEPTANCE_S3_PORT`,
 `ACCEPTANCE_SMTP_PORT` or `ACCEPTANCE_MAILPIT_PORT` when other local tools occupy them.
@@ -218,7 +224,7 @@ provider compatibility still require qualification with the approved account.
 
 Run the isolated full backend pipeline with
 `cd backend && ./gradlew test --tests '*EditorialBrokerIntegrationTests'`.
-It requires Docker and uses PostgreSQL, Kafka, Redis, MinIO and Mailpit Testcontainers with fake
+It requires Docker and uses PostgreSQL, Kafka, Redis, SeaweedFS and Mailpit Testcontainers with fake
 X/editorial/image providers. The optional real-browser workflow and required environment variables
 are documented in [the frontend guide](../frontend/README.md#optional-real-backend-browser-validation).
 The browser suite exercises real rate limits; allow the advertised `Retry-After` interval between
@@ -228,6 +234,6 @@ Real accounts require region/privacy/retention review, quotas, X access-tier con
 
 ## Debugging safety
 
-- Mailpit and MinIO contain local data only.
+- Mailpit and SeaweedFS contain local data only.
 - Do not log X bearer tokens, AI/image keys, passwords, sessions, CSRF values, complete prompts, article/comment personal data, or provider response bodies.
-- Do not expose debuggers, Kafka, PostgreSQL, Redis, MinIO, Mailpit, or OTel ports beyond loopback.
+- Do not expose debuggers, Kafka, PostgreSQL, Redis, SeaweedFS, Mailpit, or OTel ports beyond loopback.

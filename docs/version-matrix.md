@@ -36,8 +36,7 @@ reproducibility take precedence over a numerically newer but unqualified tool.
 | PostgreSQL | 18.4 | Available exact development image tag; official support page now lists a newer minor, requiring normal maintenance review |
 | Apache Kafka | 4.3.1 | Supported broker release; Spring Kafka client remains protocol compatible |
 | Redis | 8.10.0 | Exact development image tag |
-| MinIO | RELEASE.2025-04-22T22-12-26Z | Development only; official Quay distribution replaces unavailable Docker Hub reference; historical community binaries are not a production recommendation |
-| MinIO client | RELEASE.2025-05-21T01-59-54Z | Exact official Quay image for local bucket initialization |
+| SeaweedFS | 4.48 | S3-compatible object storage for development, tests, drills and the shared-VPS test environment; digest-pinned; replaces MinIO, whose images, binaries and repository are no longer available or maintained |
 | Mailpit | 1.27.8 | Exact development-only mail sink tag |
 | OpenTelemetry Collector Contrib | 0.132.0 | Exact collector tag |
 | Kubernetes | 1.36.4 | Supported deployment baseline; maintained through 2027-06-28 |
@@ -69,7 +68,7 @@ are not an independent security audit or evidence that the hosted release workfl
 | Kafka | [Apache 4.3.1 distributions](https://downloads.apache.org/kafka/4.3.1/) and [protocol compatibility](https://kafka.apache.org/43/design/protocol/#compatibility); the locked application client is 4.2.1, distinct from the broker |
 | PostgreSQL | [18.4 notes](https://www.postgresql.org/docs/release/18.4/) and [support policy](https://www.postgresql.org/support/versioning/) establish availability and the need to review newer supported minor releases |
 | Redis | [Official 8.10.0 release](https://github.com/redis/redis/releases/tag/8.10.0) and [container tag](https://hub.docker.com/v2/repositories/library/redis/tags/8.10.0) establish GA availability |
-| MinIO | [Selected release's upstream instructions](https://github.com/minio/minio/blob/RELEASE.2025-04-22T22-12-26Z/README.md) identify Quay as official distribution. Both pinned manifests were inspected, images pulled, local server health verified and bucket initializer exited successfully |
+| SeaweedFS | [4.48 release](https://github.com/seaweedfs/seaweedfs/releases/tag/4.48) (Apache-2.0) with the upstream `chrislusf/seaweedfs` image, which upstream signs with cosign. On 2026-09-29 the pinned digest passed Trivy v0.74.0 with no HIGH/CRITICAL findings across Alpine packages and the Go binary, and was verified for path-style put/get/delete/list, S3 error codes, SSE-S3 encryption at rest when a key is configured, native TLS, non-root and read-only-root operation |
 | X account lookup | [Official username lookup contract](https://docs.x.com/x-api/users/get-user-by-username) documents `GET /2/users/by/username/{username}`; account access and downstream processing rights remain separate qualification gates |
 
 The backend runtime image's previous digest failed manifest verification. The replacement

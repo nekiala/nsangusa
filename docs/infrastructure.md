@@ -173,7 +173,7 @@ application's backend and migration pods:
 | PostgreSQL 18.4 | TLS; backend uses `sslmode=verify-full` | 10 Gi `local-path-retain` |
 | Kafka 4.3.1 (KRaft, one node) | SASL_SSL with PLAIN on 9094; controller/inter-broker on loopback | 10 Gi `local-path-retain` |
 | Redis 8.10.0 | TLS only; persistence off, as locally | ephemeral |
-| MinIO (rebuilt, see below) | HTTPS; static KMS key so default SSE-S3 requests work | 20 Gi `local-path-retain` |
+| SeaweedFS 4.48 | HTTPS (native TLS); SSE-S3 key so default `AES256` requests are encrypted at rest | 20 Gi `local-path-retain` |
 | Mailpit 1.27.8 | cluster-internal SMTP sink; no mail leaves the environment | ephemeral |
 
 `bootstrap.sh` runs on the VPS as root and is idempotent. It creates a private EC P-256 CA and
@@ -200,11 +200,12 @@ The `test` profile seeds no accounts. Create the first administrator by register
 site, confirming through Mailpit (`kubectl -n nsangusa-test-data port-forward svc/mailpit
 8025:8025` on the VPS) and granting the role once with an audited SQL statement.
 
-MinIO no longer publishes images or binaries and its repository is archived.
-[`storage-images.yml`](../.github/workflows/storage-images.yml) rebuilds the releases this
-repository pinned from their tagged commits with a supported Go toolchain, scans and signs them;
-consumers pin the resulting GHCR digests. These images receive no upstream fixes; replacing
-MinIO with a maintained S3-compatible server is an open follow-up.
+Object storage is SeaweedFS, replacing MinIO after MinIO's images, binaries and repository became
+unavailable or unmaintained, and a source rebuild of the pinned release failed the Trivy gate with
+unfixable CRITICAL findings. SeaweedFS runs with its master, volume and filer on loopback, only
+the S3 gateway bound to the pod IP (the NetworkPolicy admits port 9000 only), the filer's
+unauthenticated HTTP API disabled and telemetry off. Garage was also evaluated and rejected: it
+silently ignores the `AES256` SSE-S3 header (it implements only SSE-C) and has no native TLS.
 
 **Limits:** one node and failure domain, local-path volumes without backup or PITR, no
 telemetry backend (the OTel collector is disabled), OIDC not configured, and a shared
@@ -307,7 +308,7 @@ not evidence of a real multi-replica outage exercise.
 ## Local recovery tooling boundary
 
 `infrastructure/scripts/operational-drill.py` creates only its own digest-pinned, resource-bounded
-PostgreSQL/MinIO resources, no exposed host ports, and synthetic configuration/objects. It restores
+PostgreSQL/SeaweedFS resources, no exposed host ports, and synthetic configuration/objects. It restores
 a logical `pg_dump` snapshot, replays newer deletion/suppression/provider-receipt evidence and
 proves bounded explicit-policy payload retention/legal holds. Unique evidence directories are
 retained; owned containers/volumes are normally cleaned even on failure. It never connects to

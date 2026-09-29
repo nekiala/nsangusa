@@ -22,15 +22,15 @@ make toolchains
 make dev
 ```
 
-This starts PostgreSQL, Kafka, Redis, MinIO, Mailpit, the Spring Boot backend at `http://localhost:8080`, and Next.js at `http://localhost:3000`. Local providers are deterministic fakes; no paid API is required. Mailpit is at `http://localhost:8025`, and MinIO is at `http://localhost:9001`.
+This starts PostgreSQL, Kafka, Redis, SeaweedFS (S3), Mailpit, the Spring Boot backend at `http://localhost:8080`, and Next.js at `http://localhost:3000`. Local providers are deterministic fakes; no paid API is required. Mailpit is at `http://localhost:8025`, and the S3 API is at `http://localhost:9000`.
 
 For a persistent, isolated container deployment for manual testing, use the
 [local preview instructions](docs/development.md#persistent-local-preview). Its inbox is on port
-18025 and its MinIO console is on port 19001, separate from an existing development stack.
+18025, separate from an existing development stack.
 
 The local profile sends a synthetic source through Kafka to the candidate and article queues.
 Sign in at `/admin/candidates`, inspect the evidence, approve the image and article, then publish.
-Storage and mail use real local MinIO and SMTP transports. Newsletter confirmation links are
+Storage and mail use real local S3 (SeaweedFS) and SMTP transports. Newsletter confirmation links are
 available in Mailpit; confirm an immediate subscription before publishing to receive the article.
 
 Demo accounts are created by the `local` profile:
