@@ -12,9 +12,8 @@ services:
   redis:
     ports: !reset []
 
-  minio:
-    ports: !override
-      - "127.0.0.1:19001:9001"
+  seaweedfs:
+    ports: !reset []
 
   mailpit:
     ports: !override
@@ -40,9 +39,9 @@ services:
       REDIS_HOST: redis
       MAIL_HOST: mailpit
       MAIL_PORT: "1025"
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      S3_ENDPOINT: http://seaweedfs:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-local-access-key}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-local-secret-key}
       S3_SERVER_SIDE_ENCRYPTION: none
       PUBLIC_BASE_URL: http://localhost:3000
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
@@ -63,7 +62,7 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-      minio-init:
+      seaweedfs-init:
         condition: service_completed_successfully
       mailpit:
         condition: service_healthy

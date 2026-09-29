@@ -159,8 +159,9 @@ news:
     endpoint: ${S3_ENDPOINT:http://localhost:9000}
     region: ${S3_REGION:us-east-1}
     bucket: ${S3_BUCKET:news-media}
-    access-key: ${S3_ACCESS_KEY:minioadmin}
-    secret-key: ${S3_SECRET_KEY:minioadmin}
+    access-key: ${S3_ACCESS_KEY:local-access-key}
+    secret-key: ${S3_SECRET_KEY:local-secret-key}
+    ssl-bundle: ${S3_SSL_BUNDLE:}
   publication:
     policy: ${PUBLICATION_POLICY:HUMAN_REVIEW_ALWAYS}
     automatic-confidence-threshold: ${AUTO_PUBLISH_CONFIDENCE:0.95}

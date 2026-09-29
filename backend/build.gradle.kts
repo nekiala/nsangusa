@@ -24,6 +24,9 @@ extra["springModulithVersion"] = "2.1.1"
 extra["testcontainersVersion"] = "2.0.5"
 extra["awsSdkVersion"] = "2.54.10"
 extra["tomcat.version"] = "11.0.25"
+// CVE-2026-68497: override Spring Boot 4.1.1's managed Jackson until a Boot patch includes the fix.
+extra["jackson-bom.version"] = "3.1.6"
+extra["jackson-2-bom.version"] = "2.21.6"
 
 dependencies {
   implementation("org.springframework.boot:spring-boot-starter-actuator")
@@ -45,6 +48,7 @@ dependencies {
   implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0")
   implementation(platform("software.amazon.awssdk:bom:${property("awsSdkVersion")}"))
   implementation("software.amazon.awssdk:s3")
+  implementation("software.amazon.awssdk:apache5-client")
   implementation("org.springframework.modulith:spring-modulith-events-api")
   implementation("org.springframework.modulith:spring-modulith-observability-api")
   implementation("org.springframework.modulith:spring-modulith-starter-core")

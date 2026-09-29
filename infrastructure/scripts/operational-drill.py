@@ -17,8 +17,12 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 POSTGRES = "postgres@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636"
-MINIO = "quay.io/minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e"
-MC = "quay.io/minio/mc@sha256:09f93f534cde415d192bb6084dd0e0ddd1715fb602f8a922ad121fd2bf0f8b44"
+SEAWEEDFS = "chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d"
+# Without a network the embedded master, volume, filer and S3 gateway talk over loopback; the
+# filer's unauthenticated HTTP API is disabled and volumes stay small enough for the memory cap.
+SEAWEEDFS_ARGS = ["server", "-ip=127.0.0.1", "-dir=/data", "-s3", "-s3.port=9000",
+                  "-filer.disableHttp", "-master.telemetry=false",
+                  "-master.volumeSizeLimitMB=64", "-volume.max=32"]
 LABEL = "com.nsangusa.operational-drill"
 
 
@@ -50,7 +54,7 @@ class Drill:
                        "maxRowsPerLedger": 100, "maxArchiveBytes": 16777216,
                        "maxObjectBytes": 4096,
                        "retentionBatch": 1},
-            "images": {"postgres": POSTGRES, "minio": MINIO, "mc": MC},
+            "images": {"postgres": POSTGRES, "seaweedfs": SEAWEEDFS},
             "checks": {}, "status": "running"}
         self.pg = self.id + "-pg"
         self.s3 = self.id + "-s3"
@@ -73,7 +77,7 @@ class Drill:
         return name
 
     def start(self):
-        for image in (POSTGRES, MINIO, MC):
+        for image in (POSTGRES, SEAWEEDFS):
             if self.docker("image", "inspect", image, check=False).returncode:
                 self.docker("pull", image, timeout=180)
         pg_volume = self.create_volume("-pg-data")
@@ -82,11 +86,11 @@ class Drill:
             (self.pg, "512m", f"{pg_volume}:/var/lib/postgresql", POSTGRES,
              ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=15",
               "-c", "statement_timeout=15000", "-c", "lock_timeout=5000"]),
-            (self.s3, "256m", f"{s3_volume}:/data", MINIO, ["server", "/data"])
+            (self.s3, "256m", f"{s3_volume}:/data", SEAWEEDFS, SEAWEEDFS_ARGS)
         ]:
             env = (["-e", "POSTGRES_PASSWORD=synthetic-only", "-e", "POSTGRES_DB=source"]
                    if name == self.pg else
-                   ["-e", "MINIO_ROOT_USER=synthetic", "-e", "MINIO_ROOT_PASSWORD=synthetic-only"])
+                   ["-e", "AWS_ACCESS_KEY_ID=synthetic", "-e", "AWS_SECRET_ACCESS_KEY=synthetic-only"])
             self.docker("create", "--name", name, "--label", f"{LABEL}={self.id}",
                         "--network", "none", "--memory", memory, "--memory-swap", memory,
                         "--cpus", "0.5", "--pids-limit", "160",
@@ -101,8 +105,14 @@ class Drill:
         else:
             raise RuntimeError("isolated PostgreSQL readiness timeout")
         self.sql("select 1")
-        self.mc(["mb", "local/source"])
-        self.mc(["mb", "local/restored"])
+        for attempt in range(45):
+            if self.s3_request("GET", "/healthz", check=False) is not None:
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError("isolated object storage readiness timeout")
+        self.s3_request("PUT", "/source")
+        self.s3_request("PUT", "/restored")
         self.save()
 
     def sql(self, statement, database="source"):
@@ -110,35 +120,27 @@ class Drill:
                            "ON_ERROR_STOP=1", "-U", "postgres", "-d", database,
                            data=statement.encode()).stdout.decode().strip()
 
-    def mc(self, args, data=None):
-        # The helper shares only this owned container's isolated network namespace.
-        name = self.id + "-mc-" + uuid.uuid4().hex[:8]
+    def s3_request(self, method, path, data=None, check=True):
+        # One signed request from a throwaway client sharing only this owned container's
+        # isolated network namespace. Returns the body, or None for a non-2xx when check=False.
+        require(path.startswith("/") and ".." not in path, "unexpected object path")
+        require(data is None or len(data) <= 4096, "object exceeds fixture byte limit")
+        name = self.id + "-s3-client-" + uuid.uuid4().hex[:8]
         self.resources.append(("container", name))
-        upload = None
-        mounts = []
-        try:
-            if args[0] == "pipe":
-                require(data is not None and len(data) <= 4096, "object exceeds fixture byte limit")
-                upload = self.output / (name + ".object")
-                with upload.open("xb") as destination:
-                    destination.write(data)
-                mounts = ["-v", f"{upload}:/input/object:ro"]
-                # Unknown-size stdin uploads preallocate large multipart buffers in this client.
-                args = ["cp", "--disable-multipart", "/input/object", args[1]]
-                data = None
-            result = self.docker(
-                "run", "--rm", "--name", name, "--label", f"{LABEL}={self.id}",
-                "--network", f"container:{self.s3}",
-                "--memory", "256m", "--memory-swap", "256m", "--cpus", "0.5", "--pids-limit", "64",
-                "--read-only", "--tmpfs", "/work:rw,noexec,nosuid,size=16m", *mounts,
-                "-e", "MC_CONFIG_DIR=/work", "-e", "GOMEMLIMIT=192MiB", "-e", "GOMAXPROCS=2",
-                "--entrypoint", "/bin/sh", "-i", MC, "-c",
-                'mc alias set local http://127.0.0.1:9000 synthetic synthetic-only >/dev/null && exec mc "$@"',
-                "mc", *args, data=data)
-            return result.stdout
-        finally:
-            if upload is not None:
-                upload.unlink()
+        upload = ["--data-binary", "@-"] if data is not None else []
+        result = self.docker(
+            "run", "--rm", *(["-i"] if data is not None else []), "--name", name, "--label", f"{LABEL}={self.id}",
+            "--network", f"container:{self.s3}",
+            "--memory", "256m", "--memory-swap", "256m", "--cpus", "0.5", "--pids-limit", "64",
+            "--read-only", "--tmpfs", "/work:rw,noexec,nosuid,size=16m",
+            "--entrypoint", "/bin/sh", SEAWEEDFS, "-c",
+            'body=/work/body; status="$(curl -sS -o "$body" -w "%{http_code}" '
+            '--aws-sigv4 aws:amz:us-east-1:s3 --user synthetic:synthetic-only "$@")" '
+            '&& case "$status" in 2??) cat "$body" ;; '
+            '*) echo "HTTP $status" >&2; head -c 512 "$body" >&2; exit 22 ;; esac',
+            "s3", "-X", method, *upload, f"http://127.0.0.1:9000{path}",
+            data=data, check=check)
+        return result.stdout if result.returncode == 0 else None
 
     def migrate(self):
         files = sorted((ROOT / "backend/src/main/resources/db/migration").glob("V*.sql"),
@@ -152,8 +154,8 @@ class Drill:
 
     def fixture(self):
         self.sql((ROOT / "infrastructure/scripts/sql/operational-fixture.sql").read_text())
-        self.mc(["pipe", "local/source/retained.txt"], b"synthetic retained object\n")
-        self.mc(["pipe", "local/source/restricted.txt"], b"synthetic restricted object\n")
+        self.s3_request("PUT", "/source/retained.txt", b"synthetic retained object\n")
+        self.s3_request("PUT", "/source/restricted.txt", b"synthetic restricted object\n")
         metrics = (ROOT / "backend/src/main/java/com/nsangusa/news/eventprocessing/internal/OperationalMetrics.java").read_text()
         query = re.search(r'static final String SQL\s*=\s*"""(.*?)"""', metrics, re.S).group(1)
         rows = self.sql(query).splitlines()
@@ -176,7 +178,7 @@ class Drill:
         config = json.dumps({"providers": "fake", "ingress": False, "consumers": "paused",
                              "migrations": self.evidence["migrations"]}, sort_keys=True).encode()
         bundle = io.BytesIO()
-        self.object_bytes = {key: self.mc(["cat", f"local/source/{key}"])
+        self.object_bytes = {key: self.s3_request("GET", f"/source/{key}")
                              for key in ("retained.txt", "restricted.txt")}
         members = {"database.dump": database, "config.json": config,
                    **{f"objects/{key}": value for key, value in self.object_bytes.items()}}
@@ -204,7 +206,7 @@ class Drill:
 
     def post_backup_changes(self):
         self.sql((ROOT / "infrastructure/scripts/sql/operational-post-backup.sql").read_text())
-        self.mc(["rm", "local/source/restricted.txt"])
+        self.s3_request("DELETE", "/source/restricted.txt")
         self.ledger = {}
         for table in ("source_tombstones", "event_replay_suppressions", "newsletter_deliveries"):
             rows = json.loads(self.sql(
@@ -239,7 +241,7 @@ class Drill:
             self.check("config_restore_keeps_fake_providers_and_paused_consumers",
                        restored_config["providers"] == "fake" and restored_config["consumers"] == "paused")
             for key in self.object_bytes:
-                self.mc(["pipe", f"local/restored/{key}"], archive.read(f"objects/{key}"))
+                self.s3_request("PUT", f"/restored/{key}", archive.read(f"objects/{key}"))
         self.check("logical_restore_inventory_matches_snapshot", self.inventory("restored") == self.before)
         public_execute = self.sql(
             "select count(*) from pg_proc p, lateral aclexplode(coalesce(p.proacl, acldefault('f',p.proowner))) a "
@@ -247,7 +249,7 @@ class Drill:
             "restored")
         self.check("restore_preserves_retention_public_execute_revocation", public_execute == "0")
         self.check("object_restore_integrity",
-                   all(self.mc(["cat", f"local/restored/{key}"]) == data
+                   all(self.s3_request("GET", f"/restored/{key}") == data
                        for key, data in self.object_bytes.items()))
         self.evidence["restoreElapsedSeconds"] = round(time.monotonic() - started, 3)
         self.evidence["logicalBackupAgeSeconds"] = round(time.monotonic() - self.backup_time, 3)
@@ -288,10 +290,10 @@ class Drill:
                  f"insert into recovery_input values ('{ledger}'::jsonb);\n" + sql + "\ncommit;", "restored")
         for key in self.ledger["objectTombstones"]:
             require(key == "restricted.txt", "unexpected object key; refusing broad deletion")
-            self.mc(["rm", f"local/restored/{key}"])
+            self.s3_request("DELETE", f"/restored/{key}")
         self.check("retained_object_survives_deletion_replay",
-                   self.mc(["cat", "local/restored/retained.txt"]) == self.object_bytes["retained.txt"])
-        remaining = self.mc(["ls", "--json", "local/restored"]).decode()
+                   self.s3_request("GET", "/restored/retained.txt") == self.object_bytes["retained.txt"])
+        remaining = self.s3_request("GET", "/restored?list-type=2").decode()
         self.check("restricted_object_not_resurrected", "restricted.txt" not in remaining)
         self.sql((ROOT / "infrastructure/scripts/sql/operational-assertions.sql").read_text(), "restored")
         self.check("deletion_suppression_inbox_outbox_newsletter_reconciled", True)

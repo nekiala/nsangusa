@@ -40,11 +40,12 @@ class StagingHttpsGuards(unittest.TestCase):
                     if line.strip().startswith("server_name "):
                         self.assertEqual(line.strip(), "server_name staging.nsangusa.com;")
                 self.assertNotIn("default_server", text)
-                self.assertNotIn("proxy_pass", text)
                 self.assertNotIn("/etc/letsencrypt", text)
-                self.assertIn('return 503 "Nsangusa staging is not yet deployed.\\n";', text)
                 self.assertIn("location ^~ /.well-known/acme-challenge/", text)
                 self.assertIn("try_files $uri =404;", text)
+        bootstrap = (ASSETS / "http-bootstrap.conf").read_text()
+        self.assertNotIn("proxy_pass", bootstrap)
+        self.assertIn('return 503 "Nsangusa staging is not yet deployed.\\n";', bootstrap)
         tls = (ASSETS / "https.conf").read_text()
         self.assertIn("ssl_protocols TLSv1.2 TLSv1.3;", tls)
         self.assertIn("return 308 https://staging.nsangusa.com$request_uri;", tls)
@@ -53,6 +54,28 @@ class StagingHttpsGuards(unittest.TestCase):
         self.assertNotIn("preload", tls)
         self.assertIn('add_header Cache-Control "no-store" always;', tls)
         self.assertIn('add_header X-Robots-Tag "noindex, nofollow" always;', tls)
+
+    def test_test_environment_is_proxied_only_to_loopback_node_ports_behind_basic_auth(self):
+        tls = (ASSETS / "https.conf").read_text()
+        https_server = tls[tls.index("listen 443 ssl;"):]
+        targets = [line.split()[1].rstrip(";") for line in https_server.splitlines()
+                   if line.strip().startswith("proxy_pass ")]
+        self.assertEqual(sorted(targets), ["http://127.0.0.1:30380", "http://127.0.0.1:30381"])
+        self.assertNotIn("proxy_pass", tls[:tls.index("listen 443 ssl;")])
+        self.assertIn('auth_basic "Nsangusa test environment";', https_server)
+        self.assertIn("auth_basic_user_file /etc/nginx/nsangusa-test.htpasswd;", https_server)
+        # The only unauthenticated location is the HTTPS challenge path, which serves nothing.
+        acme = https_server[https_server.index("location ^~ /.well-known/acme-challenge/"):]
+        acme = acme[:acme.index("}")]
+        self.assertEqual(https_server.count("auth_basic off;"), 1)
+        self.assertIn("auth_basic off;", acme)
+        self.assertIn("return 404;", acme)
+        # Credentials stop at the proxy and clients cannot inject forwarded addresses.
+        self.assertIn('proxy_set_header Authorization "";', https_server)
+        self.assertIn("proxy_set_header X-Forwarded-For $remote_addr;", https_server)
+        self.assertNotIn("$proxy_add_x_forwarded_for", https_server)
+        self.assertIn("location ~ ^/(api|login|logout|oauth2)(/|$)", https_server)
+        self.assertIn('return 503 "Nsangusa test environment is unavailable.\\n";', https_server)
 
     def test_renewal_is_scoped_bounded_and_does_not_force_new_certificates(self):
         service = (ASSETS / "nsangusa-acme-renew.service").read_text()

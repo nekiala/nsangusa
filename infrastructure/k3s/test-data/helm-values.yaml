@@ -1,0 +1,91 @@
+# Reviewed, non-secret overrides for the shared-VPS `test` environment. The GitHub `test`
+# environment's HELM_VALUES secret holds this file with INTERNAL_CA_PEM replaced by the test CA
+# certificate (public) from /etc/nsangusa-test/tls/ca.crt. Credentials live only in the
+# nsangusa-test-runtime Secret created by bootstrap.sh.
+global:
+  imagePullSecrets:
+    - name: ghcr-pull
+
+secret:
+  existingSecret: nsangusa-test-runtime
+  env:
+    DATABASE_USERNAME: DATABASE_USERNAME
+    DATABASE_PASSWORD: DATABASE_PASSWORD
+    KAFKA_SASL_JAAS_CONFIG: KAFKA_SASL_JAAS_CONFIG
+    REDIS_PASSWORD: REDIS_PASSWORD
+    S3_ACCESS_KEY: S3_ACCESS_KEY
+    S3_SECRET_KEY: S3_SECRET_KEY
+    NEWSLETTER_TOKEN_SECRET: NEWSLETTER_TOKEN_SECRET
+    NEWSLETTER_WEBHOOK_SECRET: NEWSLETTER_WEBHOOK_SECRET
+
+backendConfig:
+  PUBLIC_BASE_URL: https://staging.nsangusa.com
+  # PostgreSQL: verify-full against the test CA, supplied through the environment variable below.
+  DATABASE_URL: jdbc:postgresql://postgres.nsangusa-test-data.svc:5432/news?sslmode=verify-full&sslfactory=org.postgresql.ssl.SingleCertValidatingFactory&sslfactoryarg=env:NSANGUSA_INTERNAL_CA
+  DATABASE_POOL_SIZE: "10"
+  KAFKA_BOOTSTRAP_SERVERS: kafka.nsangusa-test-data.svc.cluster.local:9094
+  KAFKA_SECURITY_PROTOCOL: SASL_SSL
+  KAFKA_SASL_MECHANISM: PLAIN
+  SPRING_KAFKA_SSL_TRUSTSTORETYPE: PEM
+  SPRING_KAFKA_SSL_TRUSTSTORECERTIFICATES: |
+    INTERNAL_CA_PEM
+  REDIS_HOST: redis.nsangusa-test-data.svc
+  REDIS_SSL_ENABLED: "true"
+  SPRING_DATA_REDIS_SSL_BUNDLE: internal
+  SPRING_SSL_BUNDLE_PEM_INTERNAL_TRUSTSTORE_CERTIFICATE: |
+    INTERNAL_CA_PEM
+  S3_ENDPOINT: https://seaweedfs.nsangusa-test-data.svc:9000
+  S3_SSL_BUNDLE: internal
+  S3_REGION: us-east-1
+  S3_BUCKET: news-media
+  NSANGUSA_INTERNAL_CA: |
+    INTERNAL_CA_PEM
+  # Mailpit sink inside the cluster; no mail leaves the test environment.
+  MAIL_HOST: mailpit.nsangusa-test-data.svc
+  MAIL_PORT: "1025"
+  MAIL_SMTP_AUTH: "false"
+  MAIL_STARTTLS_ENABLE: "false"
+  MAIL_STARTTLS_REQUIRED: "false"
+  NEWSLETTER_FROM_ADDRESS: news@staging.nsangusa.com
+  # The chart requires these outside development, but they are read only by the `oidc` Spring
+  # profile, which this environment does not activate. Local accounts are used instead.
+  OIDC_ISSUER_URI: https://identity.nsangusa-test.invalid
+  OIDC_CLIENT_ID: oidc-profile-not-enabled
+  # No telemetry backend exists for this environment yet.
+  OTEL_TRACES_SAMPLER_ARG: "0"
+
+backend:
+  service:
+    type: NodePort
+    nodePort: 30381
+
+frontend:
+  service:
+    type: NodePort
+    nodePort: 30380
+
+ingress:
+  # Host Nginx terminates TLS and proxies to the loopback NodePorts; there is no in-cluster
+  # ingress controller on the shared VPS, so this object is inert but kept for chart parity.
+  host: staging.nsangusa.com
+
+otelCollector:
+  enabled: false
+
+networkPolicy:
+  # Loopback NodePort traffic from host Nginx is masqueraded to the cni0 address.
+  hostIngress:
+    - cidr: 10.42.0.1/32
+  backendClusterEgress:
+    - namespaceSelector:
+        kubernetes.io/metadata.name: nsangusa-test-data
+      podSelector:
+        nsangusa.io/data-service: "true"
+      ports:
+        - port: 5432
+        - port: 9094
+        - port: 6379
+        - port: 9000
+        - port: 1025
+  # Fake providers: the application needs no Internet egress in this environment.
+  externalEgressManagedExternally: true

@@ -30,7 +30,7 @@ Nsangusa is a news platform that:
 
 - Modules: `identity`, `sourceingestion`, `storyprocessing`, `aieditorial`, `articles`, `media`, `publication`, `comments`, `newsletter`, `eventprocessing`, `integration`, `administration`, `audit`, `search`.
 - Implemented HTTP surfaces are recorded in `api-and-workflow.md` and `../contracts/openapi.yaml`.
-- Local application defaults: PostgreSQL database/user/password `news`; Kafka `localhost:9092`; Redis `localhost:6379`; Mailpit SMTP `localhost:1025`; MinIO/S3 `localhost:9000`, bucket `news-media`, credentials `minioadmin`.
+- Local application defaults: PostgreSQL database/user/password `news`; Kafka `localhost:9092`; Redis `localhost:6379`; Mailpit SMTP `localhost:1025`; SeaweedFS S3 `localhost:9000`, bucket `news-media`, credentials `local-access-key`/`local-secret-key`.
 - Provider mode defaults to `disabled`; fake X/AI/image adapters require an explicit
   `local`, `test`, or `staging` profile, while production requires `PROVIDER_MODE=production`.
   Storage selection is separate: S3 is the default even locally; explicit filesystem storage is

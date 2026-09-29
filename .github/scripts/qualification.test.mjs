@@ -139,6 +139,29 @@ test("deployment smoke requires real public availability, anonymous denial, unca
     fetcher: async () => new Response(null, { headers: { "cache-control": "public, max-age=60" } })
   }), /missing no-store/);
 });
+test("deployment smoke sends optional proxy basic auth as a header, never in the URL", async () => {
+  const seen = [];
+  const fetcher = async (url, options) => {
+    seen.push([url, options.headers.Authorization]);
+    const status = url.includes("/auth/me") || url.includes("/admin/") ? 401 : 200;
+    return new Response(null, { status, headers: {
+      "cache-control": "no-store", "content-security-policy": "script-src 'self' 'nonce-abc123'"
+    } });
+  };
+  await deploymentSmoke("https://news.example.com", { fetcher, basicAuth: "smoke:s3cret-value" });
+  const expected = `Basic ${Buffer.from("smoke:s3cret-value").toString("base64")}`;
+  assert.equal(seen.length, 7);
+  for (const [url, authorization] of seen) {
+    assert.equal(authorization, expected);
+    assert.ok(!url.includes("s3cret"));
+  }
+  seen.length = 0;
+  await deploymentSmoke("https://news.example.com", { fetcher });
+  assert.ok(seen.every(([, authorization]) => authorization === undefined));
+  for (const basicAuth of ["no-separator", "user:", ":password", "user:pass word"]) {
+    await assert.rejects(deploymentSmoke("https://news.example.com", { fetcher, basicAuth }), /user:password/);
+  }
+});
 test("hosted inspection fails closed on missing permissions and fetches rule details rather than trusting summaries", async () => {
   const configuration = controls();
   const requests = [];

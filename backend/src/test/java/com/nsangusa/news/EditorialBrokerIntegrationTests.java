@@ -68,12 +68,19 @@ class EditorialBrokerIntegrationTests {
 
   @Container
   static final GenericContainer<?> STORAGE =
-      new GenericContainer<>("quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z")
-          .withEnv("MINIO_ROOT_USER", "minioadmin")
-          .withEnv("MINIO_ROOT_PASSWORD", "minioadmin")
-          .withCommand("server", "/data")
+      new GenericContainer<>(
+              "chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d")
+          .withEnv("AWS_ACCESS_KEY_ID", "local-access-key")
+          .withEnv("AWS_SECRET_ACCESS_KEY", "local-secret-key")
+          .withCommand(
+              "server",
+              "-dir=/data",
+              "-s3",
+              "-s3.port=9000",
+              "-filer.disableHttp",
+              "-master.telemetry=false")
           .withExposedPorts(9000)
-          .waitingFor(Wait.forHttp("/minio/health/ready").forPort(9000));
+          .waitingFor(Wait.forHttp("/healthz").forPort(9000));
 
   @Container
   static final GenericContainer<?> MAIL =
@@ -93,8 +100,8 @@ class EditorialBrokerIntegrationTests {
     registry.add("spring.mail.port", () -> MAIL.getMappedPort(1025));
     registry.add("news.storage.endpoint", EditorialBrokerIntegrationTests::storageUrl);
     registry.add("news.storage.bucket", () -> "news-media");
-    registry.add("news.storage.access-key", () -> "minioadmin");
-    registry.add("news.storage.secret-key", () -> "minioadmin");
+    registry.add("news.storage.access-key", () -> "local-access-key");
+    registry.add("news.storage.secret-key", () -> "local-secret-key");
   }
 
   @BeforeAll
@@ -106,7 +113,7 @@ class EditorialBrokerIntegrationTests {
             .forcePathStyle(true)
             .credentialsProvider(
                 StaticCredentialsProvider.create(
-                    AwsBasicCredentials.create("minioadmin", "minioadmin")))
+                    AwsBasicCredentials.create("local-access-key", "local-secret-key")))
             .build()) {
       client.createBucket(request -> request.bucket("news-media"));
     }

@@ -70,9 +70,8 @@ python3 infrastructure/scripts/operational-drill.py \
 The output directory must be new and below the repository. No database URLs, host ports,
 production credentials, real source data or provider calls are accepted. The script creates
 unique labelled containers/volumes, without touching either preview or phase4 infrastructure.
-Service artifacts are digest-pinned. PostgreSQL is bounded to 512 MiB / 0.5 CPU, MinIO to
-256 MiB / 0.5 CPU, each short-lived object client to 256 MiB / 0.5 CPU (Go memory target
-192 MiB, two worker processors). No host ports are
+Service artifacts are digest-pinned. PostgreSQL is bounded to 512 MiB / 0.5 CPU, SeaweedFS to
+256 MiB / 0.5 CPU, each short-lived signed-request object client to 256 MiB / 0.5 CPU. No host ports are
 published; services use isolated network namespaces. SQL has 15-second statement / five-second
 lock deadlines, at most 15 database connections, two synthetic sources, 100-row ledger limits
 and a 16 MiB archive limit.

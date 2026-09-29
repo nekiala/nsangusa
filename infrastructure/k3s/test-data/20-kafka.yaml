@@ -1,0 +1,171 @@
+# Single-node KRaft Kafka. Clients use SASL_SSL (PLAIN over TLS from the test CA) on 9094;
+# controller and inter-broker listeners bind to loopback only.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: nsangusa-test-data
+spec:
+  selector:
+    app.kubernetes.io/name: kafka
+  ports:
+    - {name: client, port: 9094, targetPort: client}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: nsangusa-test-data
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+        nsangusa.io/data-service: "true"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        # Kafka's PEM keystore expects the unencrypted PKCS#8 key and certificate in one file.
+        - name: keystore
+          image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+          command: [sh, -ec, 'cat /tls/tls.key /tls/tls.crt > /keystore/keystore.pem; chmod 0400 /keystore/keystore.pem']
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: keystore, mountPath: /keystore}
+      containers:
+        - name: kafka
+          image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+          env:
+            - {name: CLUSTER_ID, value: bnNhbmd1c2EtdGVzdC0x}
+            - {name: KAFKA_NODE_ID, value: "1"}
+            - {name: KAFKA_PROCESS_ROLES, value: "broker,controller"}
+            - {name: KAFKA_LISTENERS, value: "CONTROLLER://127.0.0.1:9093,INTERNAL://127.0.0.1:29092,CLIENT://:9094"}
+            - {name: KAFKA_ADVERTISED_LISTENERS, value: "INTERNAL://127.0.0.1:29092,CLIENT://kafka.nsangusa-test-data.svc.cluster.local:9094"}
+            - {name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, value: "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,CLIENT:SASL_SSL"}
+            - {name: KAFKA_CONTROLLER_LISTENER_NAMES, value: CONTROLLER}
+            - {name: KAFKA_INTER_BROKER_LISTENER_NAME, value: INTERNAL}
+            - {name: KAFKA_CONTROLLER_QUORUM_VOTERS, value: "1@127.0.0.1:9093"}
+            - {name: KAFKA_LISTENER_NAME_CLIENT_SASL_ENABLED_MECHANISMS, value: PLAIN}
+            - name: KAFKA_LISTENER_NAME_CLIENT_PLAIN_SASL_JAAS_CONFIG
+              valueFrom: {secretKeyRef: {name: test-data-credentials, key: KAFKA_BROKER_JAAS}}
+            - {name: KAFKA_SSL_KEYSTORE_TYPE, value: PEM}
+            - {name: KAFKA_SSL_KEYSTORE_LOCATION, value: /keystore/keystore.pem}
+            - {name: KAFKA_SSL_ENABLED_PROTOCOLS, value: "TLSv1.3,TLSv1.2"}
+            - {name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR, value: "1"}
+            - {name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR, value: "1"}
+            - {name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR, value: "1"}
+            - {name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS, value: "0"}
+            - {name: KAFKA_NUM_PARTITIONS, value: "3"}
+            - {name: KAFKA_AUTO_CREATE_TOPICS_ENABLE, value: "false"}
+            - {name: KAFKA_LOG_DIRS, value: /var/lib/kafka/data}
+            - {name: KAFKA_HEAP_OPTS, value: "-Xms512m -Xmx512m"}
+          ports:
+            - {name: client, containerPort: 9094}
+          readinessProbe:
+            exec: {command: [sh, -c, '/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:29092 >/dev/null']}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: client}
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 200m, memory: 768Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/kafka/data}
+            - {name: keystore, mountPath: /keystore, readOnly: true}
+      volumes:
+        - name: tls
+          secret: {secretName: kafka-tls, defaultMode: 0440}
+        - name: keystore
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path-retain
+        resources:
+          requests: {storage: 10Gi}
+---
+# Mirrors compose's kafka-init: the application does not declare topics itself.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topics
+  namespace: nsangusa-test-data
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        nsangusa.io/setup: "true"
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: topics
+          image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
+          env:
+            - name: CLIENT_JAAS
+              valueFrom: {secretKeyRef: {name: test-data-credentials, key: KAFKA_CLIENT_JAAS}}
+          command:
+            - sh
+            - -ec
+            - |
+              umask 077
+              {
+                echo 'security.protocol=SASL_SSL'
+                echo 'sasl.mechanism=PLAIN'
+                echo "sasl.jaas.config=$CLIENT_JAAS"
+                echo 'ssl.truststore.type=PEM'
+                echo 'ssl.truststore.location=/ca/ca.crt'
+              } > /tmp/client.properties
+              for topic in \
+                news.ingestion.v1 news.ingestion.v1.dlt \
+                news.editorial.v1 news.editorial.v1.dlt \
+                news.publication.v1 news.publication.v1.dlt \
+                news.notifications.v1 news.notifications.v1.dlt
+              do
+                /opt/kafka/bin/kafka-topics.sh \
+                  --bootstrap-server kafka.nsangusa-test-data.svc.cluster.local:9094 \
+                  --command-config /tmp/client.properties \
+                  --create --if-not-exists --topic "$topic" \
+                  --partitions 3 --replication-factor 1
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: ca, mountPath: /ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: ca
+          secret: {secretName: kafka-tls, items: [{key: ca.crt, path: ca.crt}]}
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
