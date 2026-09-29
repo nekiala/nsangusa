@@ -13,9 +13,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.UUID;
+import javax.net.ssl.TrustManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.ssl.DefaultSslBundleRegistry;
+import org.springframework.boot.ssl.NoSuchSslBundleException;
+import org.springframework.boot.ssl.SslBundle;
+import org.springframework.boot.ssl.SslBundles;
+import org.springframework.boot.ssl.SslManagerBundle;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.http.AbortableInputStream;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -154,5 +161,39 @@ class ObjectStorageTests {
     assertThatThrownBy(() -> StoredImages.readBounded(new ByteArrayInputStream(new byte[33]), 32))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("size limits");
+  }
+
+  @Test
+  void s3HttpClientUsesDefaultTrustWithoutAnSslBundle() {
+    @SuppressWarnings("unchecked")
+    ObjectProvider<SslBundles> bundles = mock(ObjectProvider.class);
+    try (var client = S3CompatibleObjectStorage.httpClient("", bundles)) {
+      assertThat(client).isNotNull();
+    }
+    verifyNoInteractions(bundles);
+  }
+
+  @Test
+  void s3HttpClientRejectsAnUnknownSslBundle() {
+    @SuppressWarnings("unchecked")
+    ObjectProvider<SslBundles> bundles = mock(ObjectProvider.class);
+    when(bundles.getObject()).thenReturn(new DefaultSslBundleRegistry());
+    assertThatThrownBy(() -> S3CompatibleObjectStorage.httpClient("internal", bundles))
+        .isInstanceOf(NoSuchSslBundleException.class);
+  }
+
+  @Test
+  void s3HttpClientUsesTheConfiguredSslBundle() {
+    @SuppressWarnings("unchecked")
+    ObjectProvider<SslBundles> bundles = mock(ObjectProvider.class);
+    SslBundle bundle = mock(SslBundle.class);
+    SslManagerBundle managers = mock(SslManagerBundle.class);
+    when(managers.getTrustManagers()).thenReturn(new TrustManager[0]);
+    when(bundle.getManagers()).thenReturn(managers);
+    when(bundles.getObject()).thenReturn(new DefaultSslBundleRegistry("internal", bundle));
+    try (var client = S3CompatibleObjectStorage.httpClient("internal", bundles)) {
+      assertThat(client).isNotNull();
+    }
+    verify(managers).getTrustManagers();
   }
 }

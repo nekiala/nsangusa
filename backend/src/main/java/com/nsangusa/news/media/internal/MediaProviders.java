@@ -9,14 +9,18 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.ssl.SslBundles;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.http.SdkHttpClient;
+import software.amazon.awssdk.http.apache5.Apache5HttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
@@ -135,11 +139,14 @@ class S3CompatibleObjectStorage implements ObjectStorage, AutoCloseable {
       @Value("${news.storage.bucket}") String bucket,
       @Value("${news.storage.access-key}") String accessKey,
       @Value("${news.storage.secret-key}") String secretKey,
-      @Value("${news.storage.server-side-encryption:AES256}") String serverSideEncryption) {
+      @Value("${news.storage.server-side-encryption:AES256}") String serverSideEncryption,
+      @Value("${news.storage.ssl-bundle:}") String sslBundle,
+      ObjectProvider<SslBundles> sslBundles) {
     this.bucket = bucket;
     this.serverSideEncryption = encryption(serverSideEncryption);
     this.client =
         S3Client.builder()
+            .httpClient(httpClient(sslBundle, sslBundles))
             .endpointOverride(endpoint)
             .region(Region.of(region))
             .credentialsProvider(
@@ -210,6 +217,16 @@ class S3CompatibleObjectStorage implements ObjectStorage, AutoCloseable {
   @Override
   public void close() {
     client.close();
+  }
+
+  static SdkHttpClient httpClient(String sslBundle, ObjectProvider<SslBundles> sslBundles) {
+    Apache5HttpClient.Builder builder = Apache5HttpClient.builder();
+    if (!sslBundle.isBlank()) {
+      var trustManagers =
+          sslBundles.getObject().getBundle(sslBundle).getManagers().getTrustManagers();
+      builder.tlsTrustManagersProvider(() -> trustManagers);
+    }
+    return builder.build();
   }
 
   private static String encryption(String value) {

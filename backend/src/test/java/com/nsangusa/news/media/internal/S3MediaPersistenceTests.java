@@ -42,6 +42,8 @@ class S3MediaPersistenceTests {
         System.getenv("S3_BUCKET"),
         System.getenv("S3_ACCESS_KEY"),
         System.getenv("S3_SECRET_KEY"),
-        "none");
+        "none",
+        "",
+        null);
   }
 }

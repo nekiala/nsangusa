@@ -48,6 +48,7 @@ dependencies {
   implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0")
   implementation(platform("software.amazon.awssdk:bom:${property("awsSdkVersion")}"))
   implementation("software.amazon.awssdk:s3")
+  implementation("software.amazon.awssdk:apache5-client")
   implementation("org.springframework.modulith:spring-modulith-events-api")
   implementation("org.springframework.modulith:spring-modulith-observability-api")
   implementation("org.springframework.modulith:spring-modulith-starter-core")
