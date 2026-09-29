@@ -1,0 +1,151 @@
+# S3-compatible storage over TLS, with a static KMS key so the application's default SSE-S3
+# (AES256) requests work. The image is rebuilt from pinned upstream source by
+# .github/workflows/storage-images.yml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: nsangusa-test-data
+spec:
+  selector:
+    app.kubernetes.io/name: minio
+  ports:
+    - {name: s3, port: 9000, targetPort: s3}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: minio
+  namespace: nsangusa-test-data
+spec:
+  serviceName: minio
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio
+        nsangusa.io/data-service: "true"
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: minio
+          image: MINIO_IMAGE
+          args: [server, /data, --address, ":9000", --certs-dir, /certs]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom: {secretKeyRef: {name: test-data-credentials, key: S3_ACCESS_KEY}}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom: {secretKeyRef: {name: test-data-credentials, key: S3_SECRET_KEY}}
+            - name: MINIO_KMS_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: test-data-credentials, key: MINIO_KMS_SECRET_KEY}}
+            - {name: MINIO_BROWSER, value: "off"}
+            - {name: HOME, value: /tmp}
+          ports:
+            - {name: s3, containerPort: 9000}
+          readinessProbe:
+            httpGet: {path: /minio/health/ready, port: s3, scheme: HTTPS}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /minio/health/live, port: s3, scheme: HTTPS}
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: certs, mountPath: /certs}
+            - {name: tmp, mountPath: /tmp}
+      initContainers:
+        # MinIO expects public.crt/private.key and may write under its certs directory.
+        - name: certs
+          image: MINIO_IMAGE
+          command: [sh, -ec, 'cp /tls/tls.crt /certs/public.crt; cp /tls/tls.key /certs/private.key; chmod 0400 /certs/private.key']
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: certs, mountPath: /certs}
+      volumes:
+        - name: tls
+          secret: {secretName: minio-tls, defaultMode: 0440}
+        - name: certs
+          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path-retain
+        resources:
+          requests: {storage: 20Gi}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-bucket
+  namespace: nsangusa-test-data
+spec:
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        nsangusa.io/setup: "true"
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: bucket
+          image: MC_IMAGE
+          env:
+            - name: S3_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: test-data-credentials, key: S3_ACCESS_KEY}}
+            - name: S3_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: test-data-credentials, key: S3_SECRET_KEY}}
+            - {name: MC_CONFIG_DIR, value: /tmp/mc}
+          command:
+            - sh
+            - -ec
+            - |
+              mkdir -p /tmp/mc/certs/CAs
+              cp /ca/ca.crt /tmp/mc/certs/CAs/nsangusa-test-ca.crt
+              mc alias set test https://minio.nsangusa-test-data.svc.cluster.local:9000 \
+                "$S3_ACCESS_KEY" "$S3_SECRET_KEY" >/dev/null
+              mc mb --ignore-existing test/news-media
+              mc anonymous set none test/news-media
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: ca, mountPath: /ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: ca
+          secret: {secretName: minio-tls, items: [{key: ca.crt, path: ca.crt}]}
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 4Mi}
