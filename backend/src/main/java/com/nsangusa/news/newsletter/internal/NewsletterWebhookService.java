@@ -25,6 +25,8 @@ class NewsletterWebhookService {
   private final byte[] secret;
   private final String configuredProvider;
 
+  // PMD mistakes the injected webhook secret for a hard-coded key.
+  @SuppressWarnings("PMD.HardCodedCryptoKey")
   NewsletterWebhookService(
       ProviderWebhookRepository webhooks,
       NewsletterDeliveryRepository deliveries,

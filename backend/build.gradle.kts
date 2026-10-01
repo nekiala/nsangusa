@@ -1,5 +1,6 @@
 plugins {
   java
+  pmd
   id("org.springframework.boot") version "4.1.1"
   id("io.spring.dependency-management") version "1.1.7"
   id("com.diffplug.spotless") version "8.10.1"
@@ -87,6 +88,18 @@ dependencyManagement {
 
 tasks.withType<Test> {
   useJUnitPlatform()
+}
+
+pmd {
+  toolVersion = "7.28.0"
+  ruleSets = listOf()
+  ruleSetFiles = files("config/pmd/ruleset.xml")
+  isConsoleOutput = true
+}
+
+// Tests intentionally exercise misuse; the bug-focused ruleset applies to production code.
+tasks.named("pmdTest") {
+  enabled = false
 }
 
 spotless {
