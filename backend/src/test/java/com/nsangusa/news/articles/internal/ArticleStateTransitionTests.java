@@ -73,6 +73,25 @@ class ArticleStateTransitionTests {
   }
 
   @Test
+  void lateCandidateEventForTheApprovedImageLeavesTheArticleUnchanged() {
+    var article = Article.fromDraft(UUID.randomUUID(), draft(true));
+    UUID fallback = UUID.randomUUID();
+    // The approval consumer can apply its event before the candidate consumer applies its own.
+    article.imageApproved(fallback, "articles/fallback/hero.png", "Neutral", false);
+    var updatedAt = article.updatedAt;
+    int revisions = article.revisions.size();
+
+    article.imageCandidateReady(fallback);
+
+    assertThat(article.pendingImageGenerationId).isNull();
+    assertThat(article.approvedImageGenerationId).isEqualTo(fallback);
+    assertThat(article.imageApprovalRequired).isFalse();
+    assertThat(article.state).isEqualTo(ArticleState.AWAITING_REVIEW);
+    assertThat(article.updatedAt).isEqualTo(updatedAt);
+    assertThat(article.revisions).hasSize(revisions);
+  }
+
+  @Test
   void regenerationDoesNotReplaceApprovedImageUntilExplicitApproval() {
     var article = Article.fromDraft(UUID.randomUUID(), draft(true));
     UUID originalGeneration = UUID.randomUUID();

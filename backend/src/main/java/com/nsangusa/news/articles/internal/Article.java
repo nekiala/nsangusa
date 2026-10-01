@@ -239,6 +239,11 @@ class Article {
     if (state == ArticleState.ARCHIVED || state == ArticleState.REJECTED) {
       throw new IllegalStateException("Rejected or archived articles cannot regenerate images");
     }
+    // Candidate and approval events reach separate consumers in either order; a late candidate
+    // for the image already approved must not reopen review or change the article version.
+    if (generationId.equals(approvedImageGenerationId)) {
+      return;
+    }
     pendingImageGenerationId = generationId;
     if (approvedImageGenerationId == null) {
       imageApprovalRequired = true;
