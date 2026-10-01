@@ -60,10 +60,10 @@ makes stale completion callbacks no-ops.
 
 ### Executable isolated local recovery qualification
 
-From the repository root, using existing Python 3.9+, Docker and OpenSSL:
+From the repository root, using Node.js 24, Docker and OpenSSL:
 
 ```sh
-python3 infrastructure/scripts/operational-drill.py \
+node infrastructure/scripts/operational-drill.mjs \
   --output .local/operational-evidence/my-unique-run
 ```
 
@@ -118,7 +118,7 @@ and volumes only. Never use project-wide `down -v`, name-pattern deletion or glo
 
 ### Optional real-binary rollback and forward qualification
 
-`infrastructure/scripts/binary-qualification.py` separately runs **candidate backend/frontend →
+`infrastructure/scripts/binary-qualification.mjs` separately runs **candidate backend/frontend →
 previous backend/frontend → candidate backend/frontend** against one fresh owned database.
 Supply four distinct, already-local full `sha256:` image IDs or repository digests. The runner
 never builds or pulls images. Candidates validate current repository Flyway checksums; the previous
@@ -156,7 +156,7 @@ ingress either. The owned network remains `internal: true` in both modes. Provid
 without disabling the candidate's Prometheus registry.
 
 ```sh
-python3 infrastructure/scripts/binary-qualification.py \
+node infrastructure/scripts/binary-qualification.mjs \
   --http-transport internal \
   --previous-backend "$PREVIOUS_BACKEND_ID" \
   --previous-frontend "$PREVIOUS_FRONTEND_ID" \
@@ -175,8 +175,7 @@ unqualified. The transport unit checks use local synthetic HTTP fixtures, not ap
 evidence:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
-  -s infrastructure/scripts -p test_binary_qualification.py -v
+node --test infrastructure/scripts/binary-qualification.test.mjs
 ```
 
 ### Explicit-policy payload retention and holds
@@ -256,7 +255,7 @@ ConfigMaps or opt-in Prometheus Operator resources. See [infrastructure.md](infr
 for secure port/network wiring. Nothing installs Prometheus, Grafana, Alertmanager or their CRDs.
 
 ```sh
-HELM=/path/to/existing/helm python3 infrastructure/scripts/test-monitoring.py
+HELM=/path/to/existing/helm node infrastructure/scripts/test-monitoring.mjs
 ```
 
 This renders safe/default and CRD-qualified paths, rejects unsafe/missing-controller combinations,

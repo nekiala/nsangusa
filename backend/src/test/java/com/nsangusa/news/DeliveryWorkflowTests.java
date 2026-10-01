@@ -44,10 +44,15 @@ class DeliveryWorkflowTests {
     assertThat(jobs.get("fullstack").toString()).contains("fullstack-acceptance.sh");
     assertThat(jobs.get("operational").toString())
         .contains(
-            "operational-drill.py",
-            "test-monitoring.py",
-            "python3 -m unittest discover -s infrastructure/scripts -p 'test_*.py'");
-    for (String script : List.of("test_binary_qualification.py", "test_shared_host.py")) {
+            "operational-drill.mjs",
+            "test-monitoring.mjs",
+            "node --test infrastructure/scripts/*.test.mjs");
+    assertThat(jobs.toString()).doesNotContain("python");
+    for (String script :
+        List.of(
+            "binary-qualification.test.mjs",
+            "check-shared-host.test.mjs",
+            "staging-https.test.mjs")) {
       assertThat(Files.exists(Path.of("..", "infrastructure", "scripts", script))).isTrue();
     }
   }

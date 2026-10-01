@@ -75,7 +75,7 @@ condition: the first immediate exec encountered the kubelet's warming cache befo
 The disposable `nsangusa-k3s-qualification` namespace is reserved for the committed fixtures;
 assert its absence before creating it and its owner label before deleting it.
 
-`infrastructure/scripts/check-shared-host.py` records only selected container/service identities,
+`infrastructure/scripts/check-shared-host.mjs` records only selected container/service identities,
 configuration fingerprints and a loopback HTTP status. Its version-2 baseline also records
 configuration symlink topology/targets and excludes certificate/private-key files. Historical
 version-1 pre/post-bootstrap evidence is retained as such; it is not silently upgraded to claim
@@ -139,6 +139,12 @@ ssh nsangusa 'sudo -n systemctl list-timers nsangusa-acme-renew.timer --no-pager
 ssh nsangusa 'sudo -n systemctl start nsangusa-acme-renew.service'
 ssh nsangusa 'sudo -n /usr/local/libexec/nsangusa-acme-verify'
 ```
+
+The verifier is a POSIX `sh` script using the host's OpenSSL, like the reload hook; it no longer
+needs Python. A host installed before 2026-10-01 still runs the earlier Python verifier until the
+repository copy is reinstalled at `/usr/local/libexec/nsangusa-acme-verify` (root-owned, mode 0755)
+and the verifier command above passes. `infrastructure/scripts/staging-https.test.mjs` exercises it
+against real local TLS fixtures.
 
 Real HTTP-01 issuance and a subsequent simulated renewal/deploy-hook exercise passed. The
 renewal drill used the same filesystem sandbox as the persistent service, did not replace the
@@ -307,7 +313,7 @@ not evidence of a real multi-replica outage exercise.
 
 ## Local recovery tooling boundary
 
-`infrastructure/scripts/operational-drill.py` creates only its own digest-pinned, resource-bounded
+`infrastructure/scripts/operational-drill.mjs` creates only its own digest-pinned, resource-bounded
 PostgreSQL/SeaweedFS resources, no exposed host ports, and synthetic configuration/objects. It restores
 a logical `pg_dump` snapshot, replays newer deletion/suppression/provider-receipt evidence and
 proves bounded explicit-policy payload retention/legal holds. Unique evidence directories are
