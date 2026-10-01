@@ -271,6 +271,25 @@ Staging application/data-service deployment, verified metrics aggregation TLS, r
 and capacity evidence, provider/policy approval and the existing human/hosted release gates
 remain open. The shared single node is not HA; no host reboot or production promotion occurred.
 
+## Specification conformance changes (2026-10-01)
+
+A re-read of the original specification found seven gaps; all are addressed in the working tree.
+These are implementation changes with local evidence, not deployment or qualification.
+
+| Gap (specification section) | Change | Local evidence |
+|---|---|---|
+| Python tooling (1, 28) | Drills, guards and tests ported to Node `.mjs` with `node --test`; host ACME verifier ported to POSIX `sh` + OpenSSL ([ADR-016](adrs.md#adr-016-operational-tooling-without-an-additional-language-runtime)) | 39 script tests (real TLS fixtures for the verifier); real restore drill passed 17 checks; real Helm 4.2.4 + promtool monitoring check passed. Binary qualification covered by unit tests only, not a four-image run |
+| Kafka transactions claim (9, 28) | `events.md` now states they are not used and why ([ADR-015](adrs.md#adr-015-no-kafka-transactions-database-outbox-and-inbox-instead)) | Documentation only; producer idempotence and `read_committed` unchanged |
+| Retry topics (9) | Group-scoped `<topic>.retry` tier after blocking retries ([ADR-014](adrs.md#adr-014-group-scoped-delayed-retry-topics)); topics added to Compose and k3s | 10 real-Kafka reliability scenarios, including delayed recovery and cross-group isolation, plus policy/interceptor unit tests |
+| Missing workflow events (9) | Seven events published via the outbox; `XAccountMonitoringRequested` triggers an account's first sync ([ADR-017](adrs.md#adr-017-publish-the-remaining-workflow-facts-as-events)) | Schemas compile with pinned Ajv; separately pinned additions baseline; contract suite and workflow integration test pass |
+| Backend static analysis (4, 26) | PMD 7.28.0 with a bug-focused ruleset, run by `check`/`build` (CI) and `make test` | Two proven false positives suppressed in place with reasons; no other findings |
+| Typography (17) | Self-hosted OFL-1.1 Inter (body/interface) and Source Serif 4 (headlines/decks), pinned at 5.3.0 | Fonts load under the production CSP in a real browser; frontend lint, types, 296 unit cases and production build pass |
+| Stray files (24) | Removed superseded `files/phase4-*.yaml` drafts (all 32 paths are in `contracts/openapi.yaml`) and an empty `src/` | Both frontend Dockerfiles were kept: one builds the preview from source, the other packages CI artifacts |
+
+Not repeated here: the full real-backend browser suite, manual accessibility review, and
+redeployment of the persistent preview or staging host. A staging host keeps its installed
+Python ACME verifier until the shell version is reinstalled.
+
 ## Implementation present
 
 These are existing code surfaces, not claims that their complete acceptance gates have passed.
