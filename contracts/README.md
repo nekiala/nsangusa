@@ -4,11 +4,12 @@
   route. The marked login/logout operations are supplied by Spring Security rather than a
   controller.
 - `events/envelope.schema.json`: common Kafka event envelope.
-- `events/*.schema.json`: complete runtime integration catalog (16 event types), envelope, and
+- `events/*.schema.json`: complete runtime integration catalog (23 event types), envelope, and
   shared payload definitions. Event-specific schemas validate the **whole envelope**, including
   `ArticleUnpublished` and `ArticleReadyForReview`.
 - `compatibility/v1/`: immutable synthetic supported-v1 examples established on 2026-09-19,
-  with checksums pinned in `SupportedV1BaselineTests`. They are independent inputs, not generated
+  with checksums pinned in `SupportedV1BaselineTests`. `compatibility/v1-additions-2026-10-01/`
+  adds examples for the seven event types introduced on 2026-10-01 and is pinned the same way. They are independent inputs, not generated
   from the current DTOs. Add a new baseline for an intentional protocol change; do not regenerate
   these files to make a failing gate green.
 
@@ -97,7 +98,7 @@ proof for every possible JSON document.
 
 | Producer / writer | Consumer / reader | Gate and support |
 | --- | --- | --- |
-| Frozen supported-v1 event examples, including absent optional fields | Current catalog + actual Jackson reader | Supported and executable for all 16 event types |
+| Frozen supported-v1 event examples, including absent optional fields | Current catalog + actual Jackson reader | Supported and executable for all 23 event types across both baselines |
 | Current typed event serialization | Current schema + current reader | Supported and executable roundtrip |
 | Six-field legacy `ArticleImageApproved` shape | Current reader | Supported; absent/null flag retains the legacy “generated” meaning at application consumption; six-argument constructor still supplies `true` |
 | Current approval with `generatedImage` present (`true`, `false`, or `null`) | Strict modeled six-field legacy consumer | **Unsupported**, explicitly rejected by both a frozen schema and a strict Jackson record; this model is not claimed to be an old binary |

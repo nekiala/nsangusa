@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.nsangusa.invalid/events/comment-moderated.schema.json",
+  "title": "CommentModerated",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "const": "CommentModerated"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commentId",
+            "articleId",
+            "previousState",
+            "decision",
+            "moderatorId",
+            "moderatedAt"
+          ],
+          "properties": {
+            "commentId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "articleId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "previousState": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "spam"
+              ]
+            },
+            "decision": {
+              "type": "string",
+              "enum": [
+                "approved",
+                "rejected",
+                "spam",
+                "deleted"
+              ]
+            },
+            "moderatorId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "moderatedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

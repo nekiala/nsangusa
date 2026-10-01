@@ -49,6 +49,9 @@ class NewsletterWorkflowConsumer {
   }
 
   @KafkaListener(topics = EventTopics.PUBLICATION, groupId = "newsletter-request-v1")
+  @KafkaListener(
+      topics = EventTopics.PUBLICATION_RETRY,
+      groupId = "newsletter-request-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void publication(String json) {
     if (!"ArticlePublished".equals(reader.eventType(json))) {
@@ -76,6 +79,9 @@ class NewsletterWorkflowConsumer {
   }
 
   @KafkaListener(topics = EventTopics.NOTIFICATIONS, groupId = "newsletter-delivery-v1")
+  @KafkaListener(
+      topics = EventTopics.NOTIFICATIONS_RETRY,
+      groupId = "newsletter-delivery-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void dispatch(String json) {
     if (!"NewsletterDispatchRequested".equals(reader.eventType(json))) {
@@ -152,9 +158,16 @@ class NewsletterWorkflowConsumer {
                     + "/api/v1/newsletter/unsubscribe?id="
                     + subscription.id
                     + "&token="
-                    + unsubscribeTokens.tokenFor(subscription.id)));
+                    + unsubscribeTokens.tokenFor(subscription.id)),
+            event.correlationId(),
+            event.eventId());
       } catch (RuntimeException exception) {
-        deliveryReservations.failed(attempt.deliveryId(), attempt.attemptToken(), "provider_error");
+        deliveryReservations.failed(
+            attempt.deliveryId(),
+            attempt.attemptToken(),
+            "provider_error",
+            event.correlationId(),
+            event.eventId());
         throw exception;
       }
     }

@@ -239,6 +239,62 @@ public final class NewsEvents {
   public record CommentSubmitted(
       @NotNull UUID commentId, @NotNull UUID articleId, @NotNull UUID authorId) {}
 
+  /** An administrator added or resumed monitoring; consumed to run that account's first sync. */
+  public record XAccountMonitoringRequested(
+      @NotNull UUID monitoredAccountId,
+      @NotBlank @Pattern(regexp = "\\d{1,30}") String accountId,
+      @NotBlank @Pattern(regexp = "[A-Za-z0-9_]{1,15}") String handle,
+      @NotBlank @Pattern(regexp = "added|resumed") String reason,
+      @NotNull Instant requestedAt) {}
+
+  public record StoryCandidateCreated(
+      @NotNull UUID storyCandidateId,
+      @NotNull UUID primarySourcePostId,
+      @NotBlank @Size(max = 100) String topic,
+      @Size(max = 100) String conversationId,
+      @NotNull Instant createdAt) {}
+
+  public record StoryAnalysisCompleted(
+      @NotNull UUID storyCandidateId,
+      @NotNull @DecimalMin("0") @DecimalMax("1") BigDecimal confidence,
+      @NotNull @PositiveOrZero Integer claimCount,
+      @NotNull @Size(max = 50) List<@NotBlank @Size(max = 500) String> warnings,
+      @NotBlank @Size(max = 100) String provider,
+      @NotBlank @Size(max = 100) String model,
+      @NotBlank @Size(max = 100) String promptVersion,
+      @NotNull Instant completedAt) {}
+
+  public record ArticleScheduled(
+      @NotNull UUID articleId,
+      @NotNull UUID scheduleId,
+      @NotNull Instant publishAt,
+      @NotNull @PositiveOrZero Long articleVersion,
+      @NotNull UUID scheduledBy) {}
+
+  /** Delivery facts identify the delivery and campaign only, never the subscriber address. */
+  public record NewsletterDelivered(
+      @NotNull UUID deliveryId,
+      @NotNull UUID articleId,
+      @NotBlank @Size(max = 200) String campaignKey,
+      @NotNull Instant deliveredAt) {}
+
+  public record NewsletterDeliveryFailed(
+      @NotNull UUID deliveryId,
+      @NotNull UUID articleId,
+      @NotBlank @Size(max = 200) String campaignKey,
+      @NotBlank @Size(max = 100) String failureCode,
+      @NotNull Boolean reconciliationRequired,
+      @NotNull Instant failedAt) {}
+
+  /** Moderator reasons are free text and stay in the audit trail, not in events. */
+  public record CommentModerated(
+      @NotNull UUID commentId,
+      @NotNull UUID articleId,
+      @NotBlank @Pattern(regexp = "pending|approved|rejected|spam") String previousState,
+      @NotBlank @Pattern(regexp = "approved|rejected|spam|deleted") String decision,
+      @NotNull UUID moderatorId,
+      @NotNull Instant moderatedAt) {}
+
   public record SourceReference(
       @NotNull UUID sourcePostId,
       @NotBlank @Size(max = 100) String account,

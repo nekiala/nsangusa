@@ -112,9 +112,12 @@ class NewsletterDigestScheduler {
                     + "/api/v1/newsletter/unsubscribe?id="
                     + subscription.id
                     + "&token="
-                    + token));
+                    + token),
+            campaign.id,
+            null);
       } catch (RuntimeException exception) {
-        deliveryReservations.failed(attempt.deliveryId(), attempt.attemptToken(), "provider_error");
+        deliveryReservations.failed(
+            attempt.deliveryId(), attempt.attemptToken(), "provider_error", campaign.id, null);
         throw exception;
       }
     }

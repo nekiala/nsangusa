@@ -1,8 +1,10 @@
 package com.nsangusa.news.storyprocessing.internal;
 
+import com.nsangusa.news.eventprocessing.DurableEventPublisher;
 import com.nsangusa.news.eventprocessing.IncomingEventReader;
 import com.nsangusa.news.eventprocessing.ProcessedEventRegistry;
 import com.nsangusa.news.integration.EventTopics;
+import com.nsangusa.news.integration.NewsEvents.StoryCandidateCreated;
 import com.nsangusa.news.integration.NewsEvents.XPostNormalized;
 import java.time.Duration;
 import java.util.UUID;
@@ -19,6 +21,7 @@ class StoryCandidateConsumer {
   private final StoryCandidateRepository stories;
   private final StoryCandidateSourceRepository sources;
   private final StoryClusterLock clusterLock;
+  private final DurableEventPublisher events;
   private final Duration clusteringWindow;
   private final double similarityThreshold;
   private final int maxSources;
@@ -29,6 +32,7 @@ class StoryCandidateConsumer {
       StoryCandidateRepository stories,
       StoryCandidateSourceRepository sources,
       StoryClusterLock clusterLock,
+      DurableEventPublisher events,
       @Value("${news.story.clustering-window:PT6H}") Duration clusteringWindow,
       @Value("${news.story.similarity-threshold:0.30}") double similarityThreshold,
       @Value("${news.story.max-sources:10}") int maxSources) {
@@ -37,6 +41,7 @@ class StoryCandidateConsumer {
     this.stories = stories;
     this.sources = sources;
     this.clusterLock = clusterLock;
+    this.events = events;
     this.clusteringWindow = clusteringWindow;
     if (similarityThreshold < 0 || similarityThreshold > 1) {
       throw new IllegalArgumentException("Story similarity threshold must be between 0 and 1");
@@ -46,6 +51,9 @@ class StoryCandidateConsumer {
   }
 
   @KafkaListener(topics = EventTopics.INGESTION, groupId = "story-candidate-v1")
+  @KafkaListener(
+      topics = EventTopics.INGESTION_RETRY,
+      groupId = "story-candidate-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void consume(String json) {
     if (!"XPostNormalized".equals(reader.eventType(json))) {
@@ -108,15 +116,28 @@ class StoryCandidateConsumer {
       candidate.addSource(terms, event.eventId());
       sources.save(new StoryCandidateSource(candidate.id, event.payload()));
     } else {
-      stories.saveAndFlush(
-          new StoryCandidate(
-              UUID.randomUUID(),
-              event.payload().sourcePostId(),
-              topic,
-              conversationId,
-              terms,
-              event.correlationId(),
-              event.eventId()));
+      var candidate =
+          stories.saveAndFlush(
+              new StoryCandidate(
+                  UUID.randomUUID(),
+                  event.payload().sourcePostId(),
+                  topic,
+                  conversationId,
+                  terms,
+                  event.correlationId(),
+                  event.eventId()));
+      events.enqueue(
+          "StoryCandidateCreated",
+          candidate.id,
+          event.correlationId(),
+          event.eventId(),
+          "story-candidate-created:" + candidate.id,
+          new StoryCandidateCreated(
+              candidate.id,
+              candidate.primarySourcePostId,
+              candidate.topic,
+              candidate.conversationId,
+              candidate.createdAt));
     }
     processed.markProcessed(event.eventId(), "story-candidate-v1");
   }

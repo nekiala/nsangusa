@@ -1,0 +1,198 @@
+{
+  "baseline": "supported-v1-additions-2026-10-01",
+  "provenance": "Hand-authored synthetic examples for the seven event types added on 2026-10-01 at schema version 1. The 2026-09-19 supported-v1 baseline is unchanged.",
+  "envelope": {
+    "eventId": "11111111-1111-4111-8111-111111111111",
+    "schemaVersion": 1,
+    "aggregateId": "22222222-2222-4222-8222-222222222222",
+    "correlationId": "33333333-3333-4333-8333-333333333333",
+    "causationId": null,
+    "timestamp": "2026-09-19T00:00:00Z",
+    "producer": "compatibility-fixture",
+    "traceContext": {
+      "traceparent": "00-00000000000000000000000000000001-0000000000000001-01"
+    },
+    "idempotencyKey": "supported-v1-fixture"
+  },
+  "requiredEnvelopeFields": [
+    "eventId",
+    "eventType",
+    "schemaVersion",
+    "aggregateId",
+    "correlationId",
+    "timestamp",
+    "producer",
+    "traceContext",
+    "idempotencyKey",
+    "payload"
+  ],
+  "invalidEnvelopeExamples": [
+    {
+      "name": "unknown-version",
+      "field": "schemaVersion",
+      "value": 2
+    },
+    {
+      "name": "zero-version",
+      "field": "schemaVersion",
+      "value": 0
+    },
+    {
+      "name": "string-version",
+      "field": "schemaVersion",
+      "value": "1"
+    },
+    {
+      "name": "fractional-version",
+      "field": "schemaVersion",
+      "value": 1.5
+    },
+    {
+      "name": "unknown-type",
+      "field": "eventType",
+      "value": "UnknownEvent"
+    },
+    {
+      "name": "short-uuid",
+      "field": "eventId",
+      "value": "1-1-1-1-1"
+    },
+    {
+      "name": "malformed-uuid",
+      "field": "aggregateId",
+      "value": "not-a-uuid"
+    },
+    {
+      "name": "uuid-number",
+      "field": "correlationId",
+      "value": 42
+    },
+    {
+      "name": "bad-causation",
+      "field": "causationId",
+      "value": "bad"
+    },
+    {
+      "name": "timestamp-no-zone",
+      "field": "timestamp",
+      "value": "2026-09-19T00:00:00"
+    },
+    {
+      "name": "timestamp-invalid-date",
+      "field": "timestamp",
+      "value": "2026-02-30T00:00:00Z"
+    },
+    {
+      "name": "timestamp-number",
+      "field": "timestamp",
+      "value": 123
+    },
+    {
+      "name": "trace-not-string",
+      "field": "traceContext",
+      "value": {
+        "traceparent": 42
+      }
+    },
+    {
+      "name": "unknown-envelope-field",
+      "field": "futureField",
+      "value": true
+    }
+  ],
+  "events": [
+    {
+      "type": "XAccountMonitoringRequested",
+      "schema": "x-account-monitoring-requested.schema.json",
+      "optional": [],
+      "payload": {
+        "monitoredAccountId": "44444444-4444-4444-8444-444444444444",
+        "accountId": "123456",
+        "handle": "synthetic_feed",
+        "reason": "added",
+        "requestedAt": "2026-10-01T00:00:00Z"
+      }
+    },
+    {
+      "type": "StoryCandidateCreated",
+      "schema": "story-candidate-created.schema.json",
+      "optional": [
+        "conversationId"
+      ],
+      "payload": {
+        "storyCandidateId": "22222222-2222-4222-8222-222222222222",
+        "primarySourcePostId": "55555555-5555-4555-8555-555555555555",
+        "topic": "politics",
+        "conversationId": "1900000000000000000",
+        "createdAt": "2026-10-01T00:00:00Z"
+      }
+    },
+    {
+      "type": "StoryAnalysisCompleted",
+      "schema": "story-analysis-completed.schema.json",
+      "optional": [],
+      "payload": {
+        "storyCandidateId": "22222222-2222-4222-8222-222222222222",
+        "confidence": 0.62,
+        "claimCount": 2,
+        "warnings": [
+          "single-source",
+          "human-review-required"
+        ],
+        "provider": "fake",
+        "model": "fake-editorial-v1",
+        "promptVersion": "editorial-analysis-v1",
+        "completedAt": "2026-10-01T00:00:00Z"
+      }
+    },
+    {
+      "type": "ArticleScheduled",
+      "schema": "article-scheduled.schema.json",
+      "optional": [],
+      "payload": {
+        "articleId": "22222222-2222-4222-8222-222222222222",
+        "scheduleId": "66666666-6666-4666-8666-666666666666",
+        "publishAt": "2026-10-02T09:00:00Z",
+        "articleVersion": 4,
+        "scheduledBy": "77777777-7777-4777-8777-777777777777"
+      }
+    },
+    {
+      "type": "NewsletterDelivered",
+      "schema": "newsletter-delivered.schema.json",
+      "optional": [],
+      "payload": {
+        "deliveryId": "22222222-2222-4222-8222-222222222222",
+        "articleId": "88888888-8888-4888-8888-888888888888",
+        "campaignKey": "fixture-campaign",
+        "deliveredAt": "2026-10-01T00:00:00Z"
+      }
+    },
+    {
+      "type": "NewsletterDeliveryFailed",
+      "schema": "newsletter-delivery-failed.schema.json",
+      "optional": [],
+      "payload": {
+        "deliveryId": "22222222-2222-4222-8222-222222222222",
+        "articleId": "88888888-8888-4888-8888-888888888888",
+        "campaignKey": "fixture-campaign",
+        "failureCode": "provider_error",
+        "reconciliationRequired": false,
+        "failedAt": "2026-10-01T00:00:00Z"
+      }
+    },
+    {
+      "type": "CommentModerated",
+      "schema": "comment-moderated.schema.json",
+      "optional": [],
+      "payload": {
+        "commentId": "22222222-2222-4222-8222-222222222222",
+        "articleId": "88888888-8888-4888-8888-888888888888",
+        "previousState": "pending",
+        "decision": "approved",
+        "moderatorId": "99999999-9999-4999-8999-999999999999",
+        "moderatedAt": "2026-10-01T00:00:00Z"
+      }
+    }
+  ]
+}

@@ -147,10 +147,10 @@ spec:
                 echo 'ssl.truststore.location=/ca/ca.crt'
               } > /tmp/client.properties
               for topic in \
-                news.ingestion.v1 news.ingestion.v1.dlt \
-                news.editorial.v1 news.editorial.v1.dlt \
-                news.publication.v1 news.publication.v1.dlt \
-                news.notifications.v1 news.notifications.v1.dlt
+                news.ingestion.v1 news.ingestion.v1.retry news.ingestion.v1.dlt \
+                news.editorial.v1 news.editorial.v1.retry news.editorial.v1.dlt \
+                news.publication.v1 news.publication.v1.retry news.publication.v1.dlt \
+                news.notifications.v1 news.notifications.v1.retry news.notifications.v1.dlt
               do
                 /opt/kafka/bin/kafka-topics.sh \
                   --bootstrap-server kafka.nsangusa-test-data.svc.cluster.local:9094 \

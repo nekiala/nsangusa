@@ -16,6 +16,7 @@ import com.nsangusa.news.integration.EventTopics;
 import com.nsangusa.news.integration.NewsEvents.ArticleDraftGenerated;
 import com.nsangusa.news.integration.NewsEvents.ArticleDraftRequested;
 import com.nsangusa.news.integration.NewsEvents.StoryAnalysisBlocked;
+import com.nsangusa.news.integration.NewsEvents.StoryAnalysisCompleted;
 import com.nsangusa.news.integration.NewsEvents.StoryAnalysisRequested;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validator;
@@ -67,6 +68,9 @@ class EditorialWorkflowConsumer {
   }
 
   @KafkaListener(topics = EventTopics.EDITORIAL, groupId = "story-analysis-v1")
+  @KafkaListener(
+      topics = EventTopics.EDITORIAL_RETRY,
+      groupId = "story-analysis-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void analyze(String json) {
     if (!"StoryAnalysisRequested".equals(reader.eventType(json))) {
@@ -160,6 +164,21 @@ class EditorialWorkflowConsumer {
               semantics.validate(normalized);
               return normalized;
             });
+    events.enqueue(
+        "StoryAnalysisCompleted",
+        event.payload().storyCandidateId(),
+        event.correlationId(),
+        event.eventId(),
+        "story-analysis-completed:" + event.payload().storyCandidateId(),
+        new StoryAnalysisCompleted(
+            event.payload().storyCandidateId(),
+            result.confidence(),
+            result.claims().size(),
+            result.warnings(),
+            result.provider(),
+            result.model(),
+            result.promptVersion(),
+            result.generatedAt()));
     var payload =
         new ArticleDraftRequested(
             event.payload().storyCandidateId(),
@@ -179,6 +198,9 @@ class EditorialWorkflowConsumer {
   }
 
   @KafkaListener(topics = EventTopics.EDITORIAL, groupId = "article-drafting-v1")
+  @KafkaListener(
+      topics = EventTopics.EDITORIAL_RETRY,
+      groupId = "article-drafting-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void draft(String json) {
     if (!"ArticleDraftRequested".equals(reader.eventType(json))) {

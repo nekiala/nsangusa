@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.nsangusa.invalid/events/story-candidate-created.schema.json",
+  "title": "StoryCandidateCreated",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "const": "StoryCandidateCreated"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "storyCandidateId",
+            "primarySourcePostId",
+            "topic",
+            "createdAt"
+          ],
+          "properties": {
+            "storyCandidateId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "primarySourcePostId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "topic": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "\\S"
+            },
+            "conversationId": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 100
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

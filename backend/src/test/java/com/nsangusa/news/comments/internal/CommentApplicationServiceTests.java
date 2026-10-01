@@ -184,6 +184,25 @@ class CommentApplicationServiceTests {
     assertThat(action.getValue().previousState).isEqualTo("pending");
     assertThat(action.getValue().action).isEqualTo("rejected");
     assertThat(report.status).isEqualTo("resolved");
+    var moderated =
+        ArgumentCaptor.forClass(com.nsangusa.news.integration.NewsEvents.CommentModerated.class);
+    verify(events)
+        .enqueue(
+            org.mockito.ArgumentMatchers.eq("CommentModerated"),
+            org.mockito.ArgumentMatchers.eq(comment.id),
+            org.mockito.ArgumentMatchers.eq(comment.id),
+            org.mockito.ArgumentMatchers.isNull(),
+            org.mockito.ArgumentMatchers.eq("comment-moderated:" + action.getValue().id),
+            moderated.capture());
+    assertThat(moderated.getValue())
+        .isEqualTo(
+            new com.nsangusa.news.integration.NewsEvents.CommentModerated(
+                comment.id,
+                articleId,
+                "pending",
+                "rejected",
+                moderatorId,
+                action.getValue().createdAt));
   }
 
   @Test

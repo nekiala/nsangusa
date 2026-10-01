@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.nsangusa.invalid/events/newsletter-delivered.schema.json",
+  "title": "NewsletterDelivered",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "const": "NewsletterDelivered"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "deliveryId",
+            "articleId",
+            "campaignKey",
+            "deliveredAt"
+          ],
+          "properties": {
+            "deliveryId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "articleId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "campaignKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "\\S"
+            },
+            "deliveredAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
