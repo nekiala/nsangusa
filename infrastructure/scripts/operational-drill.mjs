@@ -120,8 +120,11 @@ class Drill {
       this.resources.push(["container", name]);
       this.docker(["start", name]);
     }
+    // Probe over loopback TCP: the image's init server listens only on its socket and is ready
+    // before the "source" database exists.
     this.waitFor("isolated PostgreSQL readiness timeout", () =>
-      this.docker(["exec", this.pg, "pg_isready", "-U", "postgres", "-d", "source"], { check: false }).status === 0);
+      this.docker(["exec", this.pg, "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "source"],
+        { check: false }).status === 0);
     this.sql("select 1");
     this.waitFor("isolated object storage readiness timeout", () => this.s3Request("GET", "/healthz", null, false) !== null);
     this.s3Request("PUT", "/source");

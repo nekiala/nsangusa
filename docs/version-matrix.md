@@ -25,12 +25,12 @@ reproducibility take precedence over a numerically newer but unqualified tool.
 | Networknt JSON Schema Validator | 1.5.9 | Test-only Draft 2020-12 executable payload contracts |
 | Spotless / google-java-format | 8.10.1 / 1.30.0 | Java 25-compatible formatting |
 | CycloneDX Gradle plugin | 3.0.1 | Backend SBOM generation |
-| Next.js | 16.3.4 | Published exact-version registry entry; compatible React/Node peer ranges |
+| Next.js | 16.3.6 | Published exact-version registry entry; compatible React/Node peer ranges; 16.3.6 fixes GHSA-vcvr-r3jv-pc5j |
 | React / React DOM | 19.2.8 | Pinned compatible release |
 | Node.js | 24.20.0 LTS builder / 24.21.0 LTS runtime | Builder remains pinned; the supported Node 24 runtime patch preserves module ABI 137 |
 | Frontend runtime | Distroless Node 24, Debian 13.7 | Signature-verified multiarchitecture digest; replaces the vulnerable Bookworm runtime without stripping package inventory |
 | TypeScript | 5.9.3 | Qualified by the selected Next.js toolchain |
-| ESLint / eslint-config-next | 9.39.1 / 16.3.4 | Qualified together |
+| ESLint / eslint-config-next | 9.39.1 / 16.3.6 | Qualified together |
 | Vitest | 4.0.8 | Qualified frontend unit runner |
 | Playwright | 1.58.2 | Qualified browser test runner |
 | PostgreSQL | 18.4 | Available exact development image tag; official support page now lists a newer minor, requiring normal maintenance review |
@@ -63,7 +63,7 @@ are not an independent security audit or evidence that the hosted release workfl
 | Boot / Java / Gradle | [Boot system requirements](https://docs.spring.io/spring-boot/system-requirements.html) identifies 4.1.1, Java 17-26 and Gradle 8.14+/9.x; [published BOM](https://repo.maven.apache.org/maven2/org/springframework/boot/spring-boot-dependencies/4.1.1/spring-boot-dependencies-4.1.1.pom) establishes the dependency baseline |
 | Modulith | [Published 2.1.1 core POM](https://repo.maven.apache.org/maven2/org/springframework/modulith/spring-modulith-core/2.1.1/spring-modulith-core-2.1.1.pom) and [tagged build](https://github.com/spring-projects/spring-modulith/blob/2.1.1/pom.xml) establish Boot 4.1.1/Framework 7.0.9/ArchUnit 1.4.2 alignment |
 | Gradle | [9.7.1 release notes](https://docs.gradle.org/9.7.1/release-notes.html), [Java compatibility](https://docs.gradle.org/9.7.1/userguide/compatibility.html), and [published distribution checksum](https://services.gradle.org/distributions/gradle-9.7.1-bin.zip.sha256); checksum matches the wrapper pin |
-| Next / React | Exact [Next 16.3.4](https://registry.npmjs.org/next/16.3.4), [React 19.2.8](https://registry.npmjs.org/react/19.2.8) and [React DOM 19.2.8](https://registry.npmjs.org/react-dom/19.2.8) registry manifests establish publication/integrity and mutually compatible peer ranges, not latest-version status |
+| Next / React | Exact [Next 16.3.6](https://registry.npmjs.org/next/16.3.6), [React 19.2.8](https://registry.npmjs.org/react/19.2.8) and [React DOM 19.2.8](https://registry.npmjs.org/react-dom/19.2.8) registry manifests establish publication/integrity and mutually compatible peer ranges, not latest-version status |
 | Node | [24.20.0 LTS release](https://nodejs.org/en/blog/release/v24.20.0) and [artifact checksums](https://nodejs.org/dist/v24.20.0/SHASUMS256.txt) establish release availability |
 | Kafka | [Apache 4.3.1 distributions](https://downloads.apache.org/kafka/4.3.1/) and [protocol compatibility](https://kafka.apache.org/43/design/protocol/#compatibility); the locked application client is 4.2.1, distinct from the broker |
 | PostgreSQL | [18.4 notes](https://www.postgresql.org/docs/release/18.4/) and [support policy](https://www.postgresql.org/support/versioning/) establish availability and the need to review newer supported minor releases |

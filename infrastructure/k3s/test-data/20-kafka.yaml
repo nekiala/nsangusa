@@ -37,15 +37,25 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       initContainers:
         # Kafka's PEM keystore expects the unencrypted PKCS#8 key and certificate in one file.
+        # The broker writes its generated configuration into /opt/kafka/config, so seed a writable
+        # copy of the image defaults; the root filesystem stays read-only.
         - name: keystore
           image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
-          command: [sh, -ec, 'cat /tls/tls.key /tls/tls.crt > /keystore/keystore.pem; chmod 0400 /keystore/keystore.pem']
+          command:
+            - sh
+            - -ec
+            - |
+              cat /tls/tls.key /tls/tls.crt > /keystore/keystore.pem
+              chmod 0400 /keystore/keystore.pem
+              cp -R /opt/kafka/config/. /kafka-config/
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: tls, mountPath: /tls, readOnly: true}
             - {name: keystore, mountPath: /keystore}
+            - {name: config, mountPath: /kafka-config}
       containers:
         - name: kafka
           image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
@@ -73,6 +83,7 @@ spec:
             - {name: KAFKA_AUTO_CREATE_TOPICS_ENABLE, value: "false"}
             - {name: KAFKA_LOG_DIRS, value: /var/lib/kafka/data}
             - {name: KAFKA_HEAP_OPTS, value: "-Xms512m -Xmx512m"}
+            - {name: LOG_DIR, value: /tmp/kafka-logs}
           ports:
             - {name: client, containerPort: 9094}
           readinessProbe:
@@ -89,15 +100,22 @@ spec:
             limits: {cpu: "1", memory: 1Gi}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: data, mountPath: /var/lib/kafka/data}
             - {name: keystore, mountPath: /keystore, readOnly: true}
+            - {name: config, mountPath: /opt/kafka/config}
+            - {name: tmp, mountPath: /tmp}
       volumes:
         - name: tls
           secret: {secretName: kafka-tls, defaultMode: 0440}
         - name: keystore
           emptyDir: {medium: Memory, sizeLimit: 1Mi}
+        - name: config
+          emptyDir: {sizeLimit: 8Mi}
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -134,6 +152,7 @@ spec:
           env:
             - name: CLIENT_JAAS
               valueFrom: {secretKeyRef: {name: test-data-credentials, key: KAFKA_CLIENT_JAAS}}
+            - {name: LOG_DIR, value: /tmp/logs}
           command:
             - sh
             - -ec
@@ -160,6 +179,7 @@ spec:
               done
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: ca, mountPath: /ca, readOnly: true}
@@ -168,4 +188,4 @@ spec:
         - name: ca
           secret: {secretName: kafka-tls, items: [{key: ca.crt, path: ca.crt}]}
         - name: tmp
-          emptyDir: {medium: Memory, sizeLimit: 1Mi}
+          emptyDir: {medium: Memory, sizeLimit: 16Mi}

@@ -25,9 +25,10 @@ extra["springModulithVersion"] = "2.1.1"
 extra["testcontainersVersion"] = "2.0.5"
 extra["awsSdkVersion"] = "2.54.10"
 extra["tomcat.version"] = "11.0.25"
-// CVE-2026-68497: override Spring Boot 4.1.1's managed Jackson until a Boot patch includes the fix.
-extra["jackson-bom.version"] = "3.1.6"
-extra["jackson-2-bom.version"] = "2.21.6"
+// CVE-2026-68497, CVE-2026-91776 and CVE-2026-91777: override Spring Boot 4.1.1's managed
+// Jackson until a Boot patch includes the fixes.
+extra["jackson-bom.version"] = "3.1.7"
+extra["jackson-2-bom.version"] = "2.21.7"
 
 dependencies {
   implementation("org.springframework.boot:spring-boot-starter-actuator")
