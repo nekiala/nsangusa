@@ -3,6 +3,9 @@ import type { ReactNode } from "react";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { publicBaseUrl } from "@/lib/public-base-url";
+// Self-hosted, OFL-1.1 licensed variable fonts: no third-party font requests at runtime.
+import "@fontsource-variable/inter";
+import "@fontsource-variable/source-serif-4";
 import "./globals.css";
 import "./workspaces.css";
 

@@ -14,9 +14,9 @@
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .footer-grid > *, .article-grid > * { min-width: 0; }
 .article-header, .article-body, .account-settings { overflow-wrap: anywhere; }
-.header-account { justify-self: end; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .6rem; min-width: 0; max-width: 20rem; font: .83rem/1.5 Arial, sans-serif; overflow-wrap: anywhere; }
+.header-account { justify-self: end; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .6rem; min-width: 0; max-width: 20rem; font: .83rem/1.5 var(--sans); overflow-wrap: anywhere; }
 .header-account button { padding: .4rem .6rem; }
-.workspace-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.2rem; padding-block: .65rem; border-top: 1px solid var(--line); font: .83rem/1.5 Arial, sans-serif; }
+.workspace-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.2rem; padding-block: .65rem; border-top: 1px solid var(--line); font: .83rem/1.5 var(--sans); }
 .workspace-bar > span { font-weight: bold; }
 .workspace-bar a[aria-current="page"] { font-weight: bold; }
 @media (max-width: 700px) {
