@@ -30,7 +30,7 @@ stop:
 	docker compose -f infrastructure/compose/compose.yaml down
 
 test:
-	cd backend && ./gradlew test
+	cd backend && ./gradlew spotlessCheck pmdMain test
 	cd frontend && npm test && npm run lint && npm run build
 
 format:

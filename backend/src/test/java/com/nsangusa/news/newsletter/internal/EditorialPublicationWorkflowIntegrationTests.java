@@ -115,7 +115,9 @@ class EditorialPublicationWorkflowIntegrationTests {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Source URL must be the official canonical X post URL");
     assertThat(count("source_posts")).isZero();
-    assertThat(count("outbox_events")).isZero();
+    // Adding the account requested its first sync; the rejected post published nothing.
+    assertThat(countEvents("XAccountMonitoringRequested")).isEqualTo(1);
+    assertThat(count("outbox_events")).isEqualTo(1);
 
     UUID sourceId =
         ingestion.discoverPost(

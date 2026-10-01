@@ -193,6 +193,11 @@ Do not substitute a filtered local run for the complete release gate.
 4. Add breakpoints at source discovery/normalization, story candidate consumer, editorial workflow consumer, article/image consumers, publication consumer, outbox relay, and DLT/retry handling.
 5. Correlate `eventId`, `aggregateId`, `correlationId`, `causationId`, `traceContext`, and `idempotencyKey`.
 6. Use Modulith/integration tests for boundaries and Testcontainers for isolated data tests. Shared Compose is for interactive development.
+7. Formatting is `./gradlew spotlessApply` (google-java-format). Static analysis is
+   `./gradlew pmdMain`, using PMD 7.28.0 with the bug-focused rules in
+   `backend/config/pmd/ruleset.xml`; `check`, `build` and `make test` run both. Suppress a finding
+   only where it is proven false, scoped to that line or member and with the reason stated. The
+   ruleset applies to production code; tests deliberately exercise misuse.
 
 ## Provider switching
 

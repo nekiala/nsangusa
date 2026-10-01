@@ -10,7 +10,7 @@ Local telemetry is printed by the collector debug exporter. Production uses the 
 - `alert-tests.json`: real promtool firing/resolution, replica aggregation, missing-data, healthy
   traffic and no-traffic tests.
 - `prometheus-example.yaml`: opt-in plain Prometheus wiring; adapt per-pod discovery for replicas.
-- Run `HELM=/path/to/helm python3 infrastructure/scripts/test-monitoring.py` **from the repository
+- Run `HELM=/path/to/helm node infrastructure/scripts/test-monitoring.mjs` **from the repository
   root**. It uses a digest-pinned, bounded, no-network Prometheus test container and existing Helm,
   without installing a monitoring stack. Its writable working state stays below the repository.
 

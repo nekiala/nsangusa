@@ -36,14 +36,19 @@ public class ReliabilityBrokerProbeConfiguration {
     return new KafkaAdmin.NewTopics(
         TopicBuilder.name(TOPIC).partitions(2).replicas(1).build(),
         TopicBuilder.name(TOPIC + ".dlt").partitions(2).replicas(1).build(),
+        TopicBuilder.name(TOPIC + EventTopics.RETRY_SUFFIX).partitions(2).replicas(1).build(),
         TopicBuilder.name(RECOVERY_TOPIC).partitions(2).replicas(1).build(),
         TopicBuilder.name(EventTopics.INGESTION).partitions(2).replicas(1).build(),
         TopicBuilder.name(EventTopics.INGESTION + ".dlt").partitions(2).replicas(1).build(),
+        TopicBuilder.name(EventTopics.INGESTION_RETRY).partitions(2).replicas(1).build(),
         TopicBuilder.name(EventTopics.EDITORIAL).partitions(2).replicas(1).build(),
         TopicBuilder.name(EventTopics.EDITORIAL + ".dlt").partitions(2).replicas(1).build(),
+        TopicBuilder.name(EventTopics.EDITORIAL_RETRY).partitions(2).replicas(1).build(),
         TopicBuilder.name(EventTopics.PUBLICATION).partitions(2).replicas(1).build(),
         TopicBuilder.name(EventTopics.PUBLICATION + ".dlt").partitions(2).replicas(1).build(),
-        TopicBuilder.name(EventTopics.NOTIFICATIONS + ".dlt").partitions(2).replicas(1).build());
+        TopicBuilder.name(EventTopics.PUBLICATION_RETRY).partitions(2).replicas(1).build(),
+        TopicBuilder.name(EventTopics.NOTIFICATIONS + ".dlt").partitions(2).replicas(1).build(),
+        TopicBuilder.name(EventTopics.NOTIFICATIONS_RETRY).partitions(2).replicas(1).build());
   }
 
   @Bean
@@ -140,6 +145,10 @@ public class ReliabilityBrokerProbeConfiguration {
     }
 
     @KafkaListener(id = GROUP, topics = TOPIC, groupId = GROUP)
+    @KafkaListener(
+        id = GROUP + EventTopics.RETRY_GROUP_SUFFIX,
+        topics = TOPIC + EventTopics.RETRY_SUFFIX,
+        groupId = GROUP + EventTopics.RETRY_GROUP_SUFFIX)
     @Transactional
     public void consume(ConsumerRecord<String, String> record) {
       process(record, GROUP);
@@ -182,6 +191,10 @@ public class ReliabilityBrokerProbeConfiguration {
     }
 
     @KafkaListener(id = OBSERVER_GROUP, topics = TOPIC, groupId = OBSERVER_GROUP)
+    @KafkaListener(
+        id = OBSERVER_GROUP + EventTopics.RETRY_GROUP_SUFFIX,
+        topics = TOPIC + EventTopics.RETRY_SUFFIX,
+        groupId = OBSERVER_GROUP + EventTopics.RETRY_GROUP_SUFFIX)
     public void observe(ConsumerRecord<String, String> record) {
       observed.computeIfAbsent(record.key(), ignored -> new AtomicInteger()).incrementAndGet();
     }

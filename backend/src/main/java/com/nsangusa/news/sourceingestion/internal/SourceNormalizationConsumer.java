@@ -37,6 +37,9 @@ class SourceNormalizationConsumer {
   }
 
   @KafkaListener(topics = EventTopics.INGESTION, groupId = "source-normalizer-v1")
+  @KafkaListener(
+      topics = EventTopics.INGESTION_RETRY,
+      groupId = "source-normalizer-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void consume(String json) {
     if (!"XPostDiscovered".equals(reader.eventType(json))) {

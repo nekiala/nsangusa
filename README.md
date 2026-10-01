@@ -1,6 +1,6 @@
 # Nsangusa news platform
 
-Production-oriented event-driven publishing platform implemented as one Java 25 / Spring Boot 4.1.1 modular monolith and one Next.js 16.3.4 frontend.
+Production-oriented event-driven publishing platform implemented as one Java 25 / Spring Boot 4.1.1 modular monolith and one Next.js 16.3.6 frontend.
 
 The implementation is not yet feature-complete or production-qualified. See the
 [completion matrix](docs/completion-matrix.md) for evidence, gaps and approval-gated delivery,

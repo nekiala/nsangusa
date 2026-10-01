@@ -2,6 +2,7 @@ package com.nsangusa.news.sourceingestion.internal;
 
 import com.nsangusa.news.eventprocessing.DurableEventPublisher;
 import com.nsangusa.news.eventprocessing.ReplaySafetyRegistry;
+import com.nsangusa.news.integration.NewsEvents.XAccountMonitoringRequested;
 import com.nsangusa.news.integration.NewsEvents.XPostDiscovered;
 import com.nsangusa.news.integration.SystemActors;
 import com.nsangusa.news.sourceingestion.SourceIngestionService;
@@ -68,9 +69,11 @@ class SourceIngestionApplicationService implements SourceIngestionService {
     }
     requireNotBlocked(accountId);
     UUID id = UUID.randomUUID();
-    accounts.save(
+    var account =
         new MonitoredXAccount(
-            id, accountId, normalizedHandle, displayName, joinTopics(topics), relevanceThreshold));
+            id, accountId, normalizedHandle, displayName, joinTopics(topics), relevanceThreshold);
+    accounts.save(account);
+    requestMonitoring(account, "added");
     return id;
   }
 
@@ -87,8 +90,12 @@ class SourceIngestionApplicationService implements SourceIngestionService {
     if (enabled) {
       requireNotBlocked(account.accountId);
     }
+    boolean resumed = enabled && !account.monitoringEnabled;
     account.monitoringEnabled = enabled;
     account.updatedAt = Instant.now();
+    if (resumed) {
+      requestMonitoring(account, "resumed");
+    }
   }
 
   @Override
@@ -126,8 +133,12 @@ class SourceIngestionApplicationService implements SourceIngestionService {
     account.displayName = displayName.trim();
     account.topics = joinTopics(topics);
     account.relevanceThreshold = relevanceThreshold;
+    boolean resumed = monitoringEnabled && !account.monitoringEnabled;
     account.monitoringEnabled = monitoringEnabled;
     account.updatedAt = Instant.now();
+    if (resumed) {
+      requestMonitoring(account, "resumed");
+    }
     audit(
         "account_updated",
         "monitored_x_account",
@@ -136,6 +147,18 @@ class SourceIngestionApplicationService implements SourceIngestionService {
         actorId,
         "administrative update",
         "{\"monitoringEnabled\":" + monitoringEnabled + "}");
+  }
+
+  // The first sync runs promptly instead of waiting for the next scheduled poll.
+  private void requestMonitoring(MonitoredXAccount account, String reason) {
+    events.enqueue(
+        "XAccountMonitoringRequested",
+        account.id,
+        account.id,
+        null,
+        "x-account-monitoring-requested:" + account.id + ":" + UUID.randomUUID(),
+        new XAccountMonitoringRequested(
+            account.id, account.accountId, account.handle, reason, account.updatedAt));
   }
 
   @Override

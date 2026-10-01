@@ -9,6 +9,8 @@ import static org.mockito.Mockito.*;
 import com.nsangusa.news.articles.ArticleService;
 import com.nsangusa.news.articles.ArticleState;
 import com.nsangusa.news.audit.AuditService;
+import com.nsangusa.news.eventprocessing.DurableEventPublisher;
+import com.nsangusa.news.integration.NewsEvents.ArticleScheduled;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -26,12 +28,14 @@ class PublicationApplicationServiceTests {
       mock(ScheduledPublicationRepository.class);
   private final ArticleService articles = mock(ArticleService.class);
   private final AuditService audit = mock(AuditService.class);
+  private final DurableEventPublisher events = mock(DurableEventPublisher.class);
   private final PublicationApplicationService service =
       new PublicationApplicationService(
           schedules,
           articles,
           audit,
-          new PublicationPolicyEvaluator("HUMAN_REVIEW_ALWAYS", new BigDecimal("0.95"), "", ""));
+          new PublicationPolicyEvaluator("HUMAN_REVIEW_ALWAYS", new BigDecimal("0.95"), "", ""),
+          events);
 
   @Test
   void creatingScheduleCapturesFlushedArticleVersionAndResponsibleActor() {
@@ -57,6 +61,17 @@ class PublicationApplicationServiceTests {
             eq("publication_schedule"),
             eq(id),
             any());
+    var scheduled = ArgumentCaptor.forClass(ArticleScheduled.class);
+    verify(events)
+        .enqueue(
+            eq("ArticleScheduled"),
+            eq(articleId),
+            eq(articleId),
+            eq(null),
+            eq("article-scheduled:" + id + ":0"),
+            scheduled.capture());
+    assertThat(scheduled.getValue())
+        .isEqualTo(new ArticleScheduled(articleId, id, publishAt, 9L, editorId));
   }
 
   @Test

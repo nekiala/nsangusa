@@ -7,6 +7,7 @@ import com.nsangusa.news.comments.CommentService;
 import com.nsangusa.news.comments.SpamDecisionSupport;
 import com.nsangusa.news.eventprocessing.DurableEventPublisher;
 import com.nsangusa.news.identity.IdentityService;
+import com.nsangusa.news.integration.NewsEvents.CommentModerated;
 import com.nsangusa.news.integration.NewsEvents.CommentSubmitted;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -221,9 +222,22 @@ class CommentApplicationService implements CommentService {
       comment.deletedByAuthor = false;
       comment.body = "[deleted by moderator]";
     }
-    moderation.save(
-        new ModerationAction(
-            commentId, moderatorId, previousState, normalizedDecision, safeReason));
+    var action =
+        new ModerationAction(commentId, moderatorId, previousState, normalizedDecision, safeReason);
+    moderation.save(action);
+    events.enqueue(
+        "CommentModerated",
+        commentId,
+        commentId,
+        null,
+        "comment-moderated:" + action.id,
+        new CommentModerated(
+            commentId,
+            comment.articleId,
+            previousState,
+            normalizedDecision,
+            moderatorId,
+            action.createdAt));
     reports
         .findByCommentIdAndStatus(commentId, "open")
         .forEach(report -> report.resolve(moderatorId));
