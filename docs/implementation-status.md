@@ -287,8 +287,9 @@ These are implementation changes with local evidence, not deployment or qualific
 | Stray files (24) | Removed superseded `files/phase4-*.yaml` drafts (all 32 paths are in `contracts/openapi.yaml`) and an empty `src/` | Both frontend Dockerfiles were kept: one builds the preview from source, the other packages CI artifacts |
 
 Not repeated here: the full real-backend browser suite, manual accessibility review, and
-redeployment of the persistent preview or staging host. A staging host keeps its installed
-Python ACME verifier until the shell version is reinstalled.
+redeployment of the persistent preview or staging application. The staging host's ACME verifier
+was replaced with the shell version on 2026-10-01 and passed through the real renewal service; see
+[HTTPS operations](infrastructure.md#staging-https-and-certificate-renewal).
 
 ## Implementation present
 

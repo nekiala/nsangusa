@@ -141,10 +141,17 @@ ssh nsangusa 'sudo -n /usr/local/libexec/nsangusa-acme-verify'
 ```
 
 The verifier is a POSIX `sh` script using the host's OpenSSL, like the reload hook; it no longer
-needs Python. A host installed before 2026-10-01 still runs the earlier Python verifier until the
-repository copy is reinstalled at `/usr/local/libexec/nsangusa-acme-verify` (root-owned, mode 0755)
-and the verifier command above passes. `infrastructure/scripts/staging-https.test.mjs` exercises it
-against real local TLS fixtures.
+needs Python. Install the repository copy at `/usr/local/libexec/nsangusa-acme-verify`
+(root-owned, mode 0755) and confirm the verifier command above passes.
+`infrastructure/scripts/staging-https.test.mjs` exercises it against real local TLS fixtures.
+
+On **2026-10-01** the shell verifier replaced the Python one on the staging host. Before
+installation, both versions passed against the live certificate from a temporary copy and reported
+the same leaf fingerprint. After installation, the direct verifier command and a manual
+`nsangusa-acme-renew.service` run (no renewal was due) both succeeded, and public HTTPS still
+returned the intended 503. Nginx and its configuration were unchanged. The Python version is
+retained, root-only, at `/var/backups/nsangusa-acme-verify.python-20260922`; to roll back, install
+it at the same path with mode 0755.
 
 Real HTTP-01 issuance and a subsequent simulated renewal/deploy-hook exercise passed. The
 renewal drill used the same filesystem sandbox as the persistent service, did not replace the
