@@ -267,7 +267,9 @@ passed; a post-renewal verifier rejects stale or untrusted served certificates.
 See [HTTPS operations](infrastructure.md#staging-https-and-certificate-renewal).
 
 This closes the absence of a staging Kubernetes base and public HTTPS, **not Steps 5/6 qualification**.
-Staging application/data-service deployment, verified metrics aggregation TLS, recovery
+The shared-VPS test environment's data services were deployed on 2026-10-01
+([record](infrastructure.md#test-data-deployment-2026-10-01)); application deployment,
+verified metrics aggregation TLS, recovery
 and capacity evidence, provider/policy approval and the existing human/hosted release gates
 remain open. The shared single node is not HA; no host reboot or production promotion occurred.
 

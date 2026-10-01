@@ -162,8 +162,10 @@ site still returned HTTPS 200. Non-secret evidence is in ignored
 `.local/operational-evidence/staging-https-20260922/`; no account keys or private certificates
 were copied into that evidence or the repository.
 
-The original preservation baseline remains intact. Future changes use
-`/etc/nsangusa-k3s/protected-host-after-https-20260922.json`, which includes the new staging site.
+The original preservation baseline remains intact. `/etc/nsangusa-k3s/protected-host-after-https-20260922.json`
+includes the new staging site; it was superseded on 2026-10-01 (see
+[test-data deployment](#test-data-deployment-2026-10-01)), and future changes compare against
+`/etc/nsangusa-k3s/protected-host-before-test-data-20261001.json`.
 The earlier baseline plus `/etc/nsangusa-k3s/approved-https-additions-20260922.json` can still
 prove that this operation did not replace original configuration.
 Application/data-service deployment, reviewer/hosted gates, access controls and the other
@@ -219,6 +221,30 @@ unfixable CRITICAL findings. SeaweedFS runs with its master, volume and filer on
 the S3 gateway bound to the pod IP (the NetworkPolicy admits port 9000 only), the filer's
 unauthenticated HTTP API disabled and telemetry off. Garage was also evaluated and rejected: it
 silently ignores the `AES256` SSE-S3 header (it implements only SSE-C) and has no native TLS.
+
+### Test-data deployment (2026-10-01)
+
+`bootstrap.sh` from `fix/spec-conformance` (`6e743f2`) ran once as root, without
+`DEPLOY_SSH_PUBLIC_KEY`. It created both namespaces, the `local-path-retain` class, the
+policies, the internal CA, per-service certificates, credentials and Secrets, the five data
+services and the `nsangusa-deployer` identity. All five services became ready. The
+`kafka-topics` Job created all twelve topics (`news.*.v1` plus `.retry` and `.dlt`) with three
+partitions each, confirmed from the broker's partition directories. The `seaweedfs-bucket` Job
+completed after two restarts while SeaweedFS was starting. Generated material is root-only under
+`/etc/nsangusa-test` (directory 0700, files 0600); none was printed or copied off the host.
+
+Before the deployment, the guard no longer matched the 2026-09-22 baseline for unrelated
+reasons: Ubuntu's `apt-daily-upgrade` restarted Nginx and the Actions runner at 06:49 UTC on
+2026-09-30, and the protected `eis-frontend` container was redeployed with a new image at 16:36
+UTC that day. Nginx configuration was unchanged. That baseline was left intact, a new pre-deployment
+snapshot was recorded as `protected-host-before-test-data-20261001.json`, and the post-deployment
+comparison against it passed. The staging hostname still serves its 503 placeholder.
+
+Not yet done: the `nsangusa-deploy` SSH user (needs the workflow's public key), the
+`ghcr-pull` Secret (needs a registry credential at `/etc/nsangusa-test/ghcr-pull.json`), the
+application deployment and the test-environment proxy vhost. Rerunning `bootstrap.sh` with
+`DEPLOY_SSH_PUBLIC_KEY` set, or after adding the registry credential, adds them without
+rotating existing material.
 
 **Limits:** one node and failure domain, local-path volumes without backup or PITR, no
 telemetry backend (the OTel collector is disabled), OIDC not configured, and a shared
