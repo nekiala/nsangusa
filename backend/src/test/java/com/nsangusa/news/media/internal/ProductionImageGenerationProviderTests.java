@@ -22,6 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -186,6 +187,15 @@ class ProductionImageGenerationProviderTests {
                       URI.create(endpoint)))
           .isInstanceOf(IllegalArgumentException.class);
     }
+  }
+
+  @Test
+  void unresolvableEndpointIsARetryableNetworkFailure() {
+    assertThatThrownBy(
+            () ->
+                ProductionImageGenerationProvider.validatePublicHttpsEndpoint(
+                    URI.create("https://unresolvable.invalid")))
+        .isInstanceOf(ResourceAccessException.class);
   }
 
   private ProductionImageGenerationProvider provider(int responseLimit, int imageLimit) {

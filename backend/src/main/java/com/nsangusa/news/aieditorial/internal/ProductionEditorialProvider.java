@@ -31,6 +31,7 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 
 class ProductionEditorialProvider
     implements EditorialAnalysisProvider, ArticleDraftProvider, ContentSafetyProvider {
@@ -515,7 +516,8 @@ class ProductionEditorialProvider
         }
       }
     } catch (java.net.UnknownHostException exception) {
-      throw new IllegalArgumentException("Provider endpoint cannot be resolved", exception);
+      // A resolver outage is a network failure to retry, not an invalid endpoint.
+      throw new ResourceAccessException("Provider endpoint cannot be resolved", exception);
     }
   }
 

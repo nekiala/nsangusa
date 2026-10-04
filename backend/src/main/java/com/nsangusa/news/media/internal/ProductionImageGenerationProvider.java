@@ -16,6 +16,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -254,7 +255,8 @@ class ProductionImageGenerationProvider implements ImageGenerationProvider {
         }
       }
     } catch (java.net.UnknownHostException exception) {
-      throw new IllegalArgumentException("Image endpoint cannot be resolved", exception);
+      // A resolver outage is a network failure to retry, not an invalid endpoint.
+      throw new ResourceAccessException("Image endpoint cannot be resolved", exception);
     }
   }
 }
