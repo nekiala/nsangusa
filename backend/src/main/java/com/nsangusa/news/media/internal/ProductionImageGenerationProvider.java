@@ -10,7 +10,7 @@ import java.util.Base64;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -19,8 +19,12 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
+// news.providers.image.live-enabled selects the live image API on its own, leaving the other
+// providers in their configured mode.
 @Component
-@ConditionalOnProperty(name = "news.providers.mode", havingValue = "production")
+@ConditionalOnExpression(
+    "'${news.providers.mode:disabled}' == 'production'"
+        + " or ${news.providers.image.live-enabled:false}")
 class ProductionImageGenerationProvider implements ImageGenerationProvider {
   private static final String PROMPT_VERSION = "editorial-illustration-v1";
   private static final String INSTRUCTIONS =
@@ -200,7 +204,7 @@ class ProductionImageGenerationProvider implements ImageGenerationProvider {
       RestClient.Builder builder, URI baseUrl, String apiKey, Duration timeout) {
     validatePublicHttpsEndpoint(baseUrl);
     if (apiKey == null || apiKey.isBlank()) {
-      throw new IllegalStateException("IMAGE_API_KEY is required in production provider mode");
+      throw new IllegalStateException("IMAGE_API_KEY is required to use the live image provider");
     }
     if (timeout.isNegative() || timeout.isZero() || timeout.compareTo(Duration.ofMinutes(3)) > 0) {
       throw new IllegalArgumentException("Invalid image provider timeout");

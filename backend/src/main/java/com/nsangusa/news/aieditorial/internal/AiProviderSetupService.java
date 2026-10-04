@@ -58,8 +58,8 @@ class AiProviderSetupService {
         blockers,
         limits(),
         "https://api.openai.com/v1/responses",
-        independentProviderMode(),
-        independentProviderMode());
+        independentProviderMode("news.providers.image.live-enabled"),
+        independentProviderMode("news.x.live-enabled"));
   }
 
   @PreAuthorize("hasRole('ADMINISTRATOR')")
@@ -254,9 +254,12 @@ class AiProviderSetupService {
     return environment.getProperty("news.providers.ai.live-enabled", Boolean.class, false);
   }
 
-  private String independentProviderMode() {
-    return "production".equals(environment.getProperty("news.providers.mode", "fake"))
-        ? "production (operator-configured; account access not verified)"
+  private String independentProviderMode(String liveGate) {
+    if ("production".equals(environment.getProperty("news.providers.mode", "fake"))) {
+      return "production (operator-configured; account access not verified)";
+    }
+    return environment.getProperty(liveGate, Boolean.class, false)
+        ? "live (operator-enabled; account access not verified)"
         : "fake (simulated; unchanged by text AI activation)";
   }
 

@@ -149,6 +149,7 @@ news:
       input-cost-per-million: ${AI_INPUT_COST_PER_MILLION:0}
       output-cost-per-million: ${AI_OUTPUT_COST_PER_MILLION:0}
     image:
+      live-enabled: ${IMAGE_LIVE_ENABLED:false}
       base-url: ${IMAGE_BASE_URL:https://api.openai.com}
       api-key: ${IMAGE_API_KEY:${AI_API_KEY:}}
       model: ${IMAGE_MODEL:gpt-image-1}
@@ -188,6 +189,7 @@ news:
     idempotency-window: ${NEWSLETTER_IDEMPOTENCY_WINDOW:PT24H}
     attempt-lease: ${NEWSLETTER_ATTEMPT_LEASE:PT10M}
   x:
+    live-enabled: ${X_LIVE_ENABLED:false}
     api-base-url: ${X_API_BASE_URL:https://api.x.com}
     bearer-token: ${X_BEARER_TOKEN:}
     reconciliation-limit: ${X_RECONCILIATION_LIMIT:100}

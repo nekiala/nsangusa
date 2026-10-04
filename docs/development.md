@@ -209,6 +209,15 @@ activation. Production still requires global production mode and all unrelated s
 configuration. `AI_API_KEY` is no longer the text adapter's credential source; image credentials
 remain independently operator-managed.
 
+`X_LIVE_ENABLED=true` with `X_BEARER_TOKEN` selects the official X API adapter on its own,
+leaving AI, image and mail providers in their configured mode; the preview Compose file passes both
+through. Post simulation is disabled while it is on. Handles added under the fake provider carry
+synthetic account IDs and must be re-resolved against X before they can sync. The token's X App
+must belong to a Project with read access to user lookup and timelines.
+
+`IMAGE_LIVE_ENABLED=true` with `IMAGE_API_KEY` likewise selects the live image adapter on its own;
+the preview Compose file passes both and `IMAGE_MODEL` through.
+
 `AI_AUTHORIZED_MODELS` is a comma-separated deployment ceiling, defaulting to `AI_MODEL`.
 `/admin/ai` selects within that catalog and publishes immutable editorial guidance versions.
 The stored prompt registry/selection governs generation; the legacy `AI_PROMPT_VERSION`

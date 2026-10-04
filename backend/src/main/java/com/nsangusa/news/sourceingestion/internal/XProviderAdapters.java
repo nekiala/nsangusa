@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -19,7 +19,8 @@ import org.springframework.web.client.RestClient;
 
 @Component
 @Profile({"local", "test", "staging"})
-@ConditionalOnProperty(name = "news.providers.mode", havingValue = "fake")
+@ConditionalOnExpression(
+    "'${news.providers.mode:disabled}' == 'fake' and !${news.x.live-enabled:false}")
 class FakeXSourceProvider implements XSourceProvider {
   @Override
   public AccountLookup lookupAccount(String handle) {
@@ -60,8 +61,11 @@ class FakeXSourceProvider implements XSourceProvider {
   }
 }
 
+// news.x.live-enabled selects the official API on its own, leaving AI, image and mail providers
+// in their configured mode.
 @Component
-@ConditionalOnProperty(name = "news.providers.mode", havingValue = "production")
+@ConditionalOnExpression(
+    "'${news.providers.mode:disabled}' == 'production' or ${news.x.live-enabled:false}")
 class OfficialXApiSourceProvider implements XSourceProvider {
   private final RestClient client;
 
@@ -76,7 +80,7 @@ class OfficialXApiSourceProvider implements XSourceProvider {
       throw new IllegalArgumentException("X API base URL must be an official HTTPS API host");
     }
     if (bearerToken.isBlank()) {
-      throw new IllegalStateException("X_BEARER_TOKEN is required in production provider mode");
+      throw new IllegalStateException("X_BEARER_TOKEN is required to use the official X API");
     }
     var requestFactory =
         new JdkClientHttpRequestFactory(
