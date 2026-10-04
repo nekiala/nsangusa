@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -13,6 +14,7 @@ import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 
@@ -59,6 +61,8 @@ class SecurityConfiguration {
     var csrf = CookieCsrfTokenRepository.withHttpOnlyFalse();
     csrf.setCookieName("XSRF-TOKEN");
     csrf.setCookiePath("/");
+    // A Basic challenge makes browsers open their native credential dialog over public pages.
+    var unauthorized = new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED);
     http.addFilterBefore(
             rateLimit,
             org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
@@ -100,7 +104,8 @@ class SecurityConfiguration {
                         org.springframework.security.web.servlet.util.matcher
                             .PathPatternRequestMatcher.withDefaults()
                             .matcher(HttpMethod.POST, "/api/v1/newsletter/unsubscribe")))
-        .httpBasic(basic -> {})
+        .httpBasic(basic -> basic.authenticationEntryPoint(unauthorized))
+        .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(unauthorized))
         .formLogin(
             form ->
                 form.loginProcessingUrl("/api/v1/auth/login")
