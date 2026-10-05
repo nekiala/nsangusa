@@ -463,19 +463,24 @@ class ProductionEditorialProvider
           """
           Extract only claims supported by the supplied permitted material, attribute each to its
           supplied source identifiers, and flag conflicting or incomplete evidence.
-          Confidence measures how clearly the material supports the claims. An official statement
-          about the account holder's own affairs is strong support; a single source is not by
-          itself a reason for low confidence.
+          Confidence measures how clearly the material shows what was claimed and by whom, not
+          whether the claim is true. A clear statement by the holder about its own affairs can
+          carry high confidence as an attributed claim. Record in warnings that it has not been
+          independently confirmed.
           """;
       case "draft" ->
           """
           Preserve the supplied classified claims and all source identifiers. Write attributed
-          prose without adding factual claims. Report REPORTED claims in a direct news register,
-          attributed to the account holder by name, as a statement the institution itself made.
-          Hedge only UNVERIFIED and DISPUTED claims. Do not describe an official statement as an
-          unverified or unconfirmed social media post, and do not call for it to be verified
-          against the same institution. Warnings are notes for the editor: keep them in
-          uncertaintyNotes and safetyFlags, never in the headline, summary, or body.
+          prose without adding factual claims. Report REPORTED claims in a direct news register as
+          statements attributed to the account holder by name: what it said, announced, or
+          published. Never assert a claim as established fact in the publication's own voice, and
+          never call it confirmed or verified. Hedge UNVERIFIED and DISPUTED claims explicitly.
+          Attribution carries the caution in the published text. The headline, summary, body,
+          seoTitle, seoDescription, socialPreviewText and their translation must not say that the
+          information is unverified, unconfirmed, single-source, not independent confirmation, or
+          awaiting verification or review, in any wording, and the body must not end with a
+          paragraph about verification. End the body when the attributed account ends. Those
+          statements are notes for the editor: put them only in uncertaintyNotes and safetyFlags.
           Fill translation with a faithful English version of the headline, summary, body,
           editorialContext, seoTitle, seoDescription and imageAltText: the same facts, attribution
           and hedging, with nothing added or omitted. Every other field stays in French.

@@ -249,7 +249,13 @@ class EditorialWorkflowConsumer {
               if (providerDraft.confidence().compareTo(event.payload().confidence()) > 0) {
                 throw new AiProviderException("unsupported_confidence");
               }
-              var reviewedDraft = mergeWarnings(providerDraft, event.payload().warnings());
+              var reviewedDraft =
+                  mergeWarnings(
+                      providerDraft,
+                      java.util.stream.Stream.concat(
+                              event.payload().warnings().stream(),
+                              publishedCaveatWarning(providerDraft).stream())
+                          .toList());
               semantics.validate(reviewedDraft);
               return reviewedDraft;
             });
@@ -357,6 +363,35 @@ class EditorialWorkflowConsumer {
                 draft.claims().stream().map(claim -> claim.text()), translatedText(draft).stream()))
         .filter(java.util.Objects::nonNull)
         .collect(java.util.stream.Collectors.joining("\n\n"));
+  }
+
+  static final String CAVEAT_IN_TEXT = "verification-caveat-in-published-text";
+
+  // Verification status belongs in editor notes. The model is told so but does not always comply,
+  // so the editor is told when a draft's reader-facing text carries such a statement.
+  private static final java.util.regex.Pattern VERIFICATION_CAVEAT =
+      java.util.regex.Pattern.compile(
+          "unverified|unconfirmed|independent(ly)? (confirm|verif)|human review"
+              + "|further verification|confirmation ind[ée]pendante|v[ée]rification suppl[ée]mentaire"
+              + "|revue humaine|relecture humaine"
+              + "|(pas|non|not( yet)?( been)?)( [ée]t[ée])?( independently)? (v[ée]rifi|confirm)",
+          java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
+
+  static java.util.Optional<String> publishedCaveatWarning(ArticleDraftGenerated draft) {
+    var published =
+        java.util.stream.Stream.concat(
+                java.util.stream.Stream.of(
+                    draft.headline(),
+                    draft.summary(),
+                    draft.body(),
+                    draft.seoTitle(),
+                    draft.seoDescription(),
+                    draft.socialPreviewText()),
+                translatedText(draft).stream())
+            .filter(java.util.Objects::nonNull);
+    return published.anyMatch(text -> VERIFICATION_CAVEAT.matcher(text).find())
+        ? java.util.Optional.of(CAVEAT_IN_TEXT)
+        : java.util.Optional.empty();
   }
 
   /** Every translated field, so translations pass the same generated-content checks. */
