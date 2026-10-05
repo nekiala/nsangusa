@@ -85,8 +85,7 @@ class IdentityApplicationService implements IdentityService {
             false,
             Set.of(UserAccount.Role.READER)));
     String token = issueToken(id, "email_verification", properties.getVerificationTokenTtl());
-    send(
-        normalized, "Verify your Nsangusa account", publicBaseUrl + "/verify-email?token=" + token);
+    send(normalized, "verify", "/verify-email?token=" + token);
     audit.record(id, "IDENTITY_REGISTERED", "user", id, Map.of());
     return id;
   }
@@ -116,10 +115,7 @@ class IdentityApplicationService implements IdentityService {
             user -> {
               String token =
                   issueToken(user.id, "email_verification", properties.getVerificationTokenTtl());
-              send(
-                  user.email,
-                  "Verify your Nsangusa account",
-                  publicBaseUrl + "/verify-email?token=" + token);
+              send(user.email, "verify", "/verify-email?token=" + token);
               audit.record(user.id, "IDENTITY_VERIFICATION_REQUESTED", "user", user.id, Map.of());
             });
   }
@@ -134,10 +130,7 @@ class IdentityApplicationService implements IdentityService {
             user -> {
               String token =
                   issueToken(user.id, "password_reset", properties.getPasswordResetTokenTtl());
-              send(
-                  user.email,
-                  "Reset your Nsangusa password",
-                  publicBaseUrl + "/password-reset?token=" + token);
+              send(user.email, "reset", "/password-reset?token=" + token);
               audit.record(user.id, "IDENTITY_PASSWORD_RESET_REQUESTED", "user", user.id, Map.of());
             });
   }
@@ -376,12 +369,25 @@ class IdentityApplicationService implements IdentityService {
         .orElseThrow(() -> new IllegalArgumentException("Token is invalid or expired"));
   }
 
-  private void send(String to, String subject, String body) {
+  /**
+   * Sends an account link email in the language of the page that asked for it, with the link
+   * pointing at that language's site.
+   */
+  private void send(String to, String kind, String path) {
+    String language = com.nsangusa.news.integration.RequestLanguage.current();
+    boolean french = com.nsangusa.news.integration.RequestLanguage.FRENCH.equals(language);
+    String subject =
+        "verify".equals(kind)
+            ? (french ? "Vérifiez votre compte Nsangusa" : "Verify your Nsangusa account")
+            : (french
+                ? "Réinitialisez votre mot de passe Nsangusa"
+                : "Reset your Nsangusa password");
     var message = new SimpleMailMessage();
     message.setTo(to);
     message.setFrom(fromAddress);
     message.setSubject(subject);
-    message.setText(body);
+    message.setText(
+        publicBaseUrl + com.nsangusa.news.integration.RequestLanguage.path(language, path));
     mailSender.send(message);
   }
 

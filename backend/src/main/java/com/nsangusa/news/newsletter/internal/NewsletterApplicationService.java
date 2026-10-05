@@ -45,21 +45,29 @@ class NewsletterApplicationService implements NewsletterService {
     random.nextBytes(bytes);
     String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     UUID id = UUID.randomUUID();
-    subscriptions.save(
+    var subscription =
         new NewsletterSubscription(
-            id, normalized, consentSource, frequency, token, unsubscribeTokens.tokenFor(id)));
-    String confirmationUrl = publicBaseUrl + "/newsletter/confirm?id=" + id + "&token=" + token;
+            id, normalized, consentSource, frequency, token, unsubscribeTokens.tokenFor(id));
+    // The subscriber keeps the language of the page they signed up on.
+    subscription.language = com.nsangusa.news.integration.RequestLanguage.current();
+    subscriptions.save(subscription);
+    var wording = NewsletterText.in(subscription.language);
+    String confirmationUrl =
+        wording.url(publicBaseUrl, "/newsletter/confirm?id=" + id + "&token=" + token);
     mailSender.send(
         "newsletter-confirmation/" + id,
         normalized,
-        "Confirm your newsletter subscription",
-        "Confirm your subscription:\n"
-            + confirmationUrl
-            + "\n\nIf you did not request this newsletter, ignore this message.",
-        "<p>Confirm your newsletter subscription:</p><p><a href=\""
+        wording.confirmSubject(),
+        wording.confirmIntro() + "\n" + confirmationUrl + "\n\n" + wording.confirmIgnore(),
+        "<p>"
+            + org.owasp.encoder.Encode.forHtml(wording.confirmIntro())
+            + "</p><p><a href=\""
             + org.owasp.encoder.Encode.forHtmlAttribute(confirmationUrl)
-            + "\">Confirm subscription</a></p>"
-            + "<p>If you did not request this newsletter, ignore this message.</p>");
+            + "\">"
+            + org.owasp.encoder.Encode.forHtml(wording.confirmAction())
+            + "</a></p><p>"
+            + org.owasp.encoder.Encode.forHtml(wording.confirmIgnore())
+            + "</p>");
     audit.record(
         null,
         "newsletter.subscription.requested",

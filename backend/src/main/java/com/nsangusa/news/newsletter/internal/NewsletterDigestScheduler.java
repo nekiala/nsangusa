@@ -60,28 +60,21 @@ class NewsletterDigestScheduler {
       return;
     }
     var campaign = campaigns.save(new NewsletterCampaign(key, recent.getFirst().id(), type));
-    StringBuilder text = new StringBuilder("Nsangusa " + type + " digest\n\n");
-    StringBuilder html = new StringBuilder("<h1>Nsangusa " + type + " digest</h1><ul>");
-    for (var article : recent) {
-      text.append(article.headline()).append("\n");
-      html.append("<li>")
-          .append("<a href=\"")
-          .append(
-              org.owasp.encoder.Encode.forHtmlAttribute(
-                  publicBaseUrl + "/articles/" + article.slug()))
-          .append("\">")
-          .append(org.owasp.encoder.Encode.forHtml(article.headline()))
-          .append("</a>")
-          .append("</li>");
-    }
-    html.append("</ul>");
+    java.util.Map<String, Digest> digests = new java.util.HashMap<>();
     for (var subscription : subscriptions.findByStatusAndFrequencyIn("confirmed", frequencies)) {
       if (suppressions.existsByEmailHash(hash(subscription.email))) {
         continue;
       }
       String token = unsubscribeTokens.tokenFor(subscription.id);
+      var wording = NewsletterText.in(subscription.language);
+      var digest =
+          digests.computeIfAbsent(wording.language(), language -> digest(type, recent, wording));
+      String text = digest.text();
+      String html = digest.html();
+      String preferences = wording.url(publicBaseUrl, "/newsletter/preferences");
       String unsubscribe =
-          publicBaseUrl + "/newsletter/unsubscribe?id=" + subscription.id + "&token=" + token;
+          wording.url(
+              publicBaseUrl, "/newsletter/unsubscribe?id=" + subscription.id + "&token=" + token);
       var reservation = deliveryReservations.reserve(subscription.id, recent.getFirst().id(), key);
       if (reservation.isEmpty()) {
         continue;
@@ -94,20 +87,26 @@ class NewsletterDigestScheduler {
             email.sendNewsletter(
                 attempt.providerIdempotencyKey(),
                 subscription.email,
-                "Your Nsangusa " + type + " digest",
+                wording.digest(type),
                 text
-                    + "\nUnsubscribe: "
+                    + "\n"
+                    + wording.unsubscribe()
+                    + ": "
                     + unsubscribe
-                    + "\nManage preferences: "
-                    + publicBaseUrl
-                    + "/newsletter/preferences",
+                    + "\n"
+                    + wording.managePreferences()
+                    + ": "
+                    + preferences,
                 html
                     + "<p><a href=\""
                     + org.owasp.encoder.Encode.forHtmlAttribute(unsubscribe)
-                    + "\">Unsubscribe</a></p><p><a href=\""
-                    + org.owasp.encoder.Encode.forHtmlAttribute(
-                        publicBaseUrl + "/newsletter/preferences")
-                    + "\">Manage preferences</a></p>",
+                    + "\">"
+                    + org.owasp.encoder.Encode.forHtml(wording.unsubscribe())
+                    + "</a></p><p><a href=\""
+                    + org.owasp.encoder.Encode.forHtmlAttribute(preferences)
+                    + "\">"
+                    + org.owasp.encoder.Encode.forHtml(wording.managePreferences())
+                    + "</a></p>",
                 publicBaseUrl
                     + "/api/v1/newsletter/unsubscribe?id="
                     + subscription.id
@@ -133,5 +132,34 @@ class NewsletterDigestScheduler {
     } catch (java.security.NoSuchAlgorithmException exception) {
       throw new IllegalStateException(exception);
     }
+  }
+
+  private record Digest(String text, String html) {}
+
+  /** The digest in one language, using each article's version in that language where it exists. */
+  private Digest digest(
+      String type, List<ArticleService.ArticleView> recent, NewsletterText wording) {
+    String title = wording.digest(type);
+    StringBuilder text = new StringBuilder(title + "\n\n");
+    StringBuilder html =
+        new StringBuilder("<h1>" + org.owasp.encoder.Encode.forHtml(title) + "</h1><ul>");
+    for (var article : recent) {
+      String headline =
+          article.translations().stream()
+              .filter(translation -> translation.language().equals(wording.language()))
+              .map(ArticleService.TranslationView::headline)
+              .findFirst()
+              .orElse(article.headline());
+      text.append(headline).append("\n");
+      html.append("<li><a href=\"")
+          .append(
+              org.owasp.encoder.Encode.forHtmlAttribute(
+                  wording.url(publicBaseUrl, "/articles/" + article.slug())))
+          .append("\">")
+          .append(org.owasp.encoder.Encode.forHtml(headline))
+          .append("</a></li>");
+    }
+    html.append("</ul>");
+    return new Digest(text.toString(), html.toString());
   }
 }
