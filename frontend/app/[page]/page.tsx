@@ -4,18 +4,22 @@ import { AuthenticatedArea } from "@/components/authenticated-area";
 import { AuthForm } from "@/components/forms";
 import { AccountSettings } from "@/components/account/account-settings";
 import { PasswordResetCompletion, VerifyEmail } from "@/components/account/token-completion";
+import { alternates } from "@/lib/i18n";
+import { requestLocale } from "@/lib/i18n/server";
 import { publicationPolicies } from "@/lib/publication-policies";
 
 export const dynamic = "force-dynamic";
 const authPages = { "sign-in": "sign-in", register: "register", "password-reset": "reset" } as const;
-const authTitles = { "sign-in": "Sign in", register: "Create an account", "password-reset": "Reset password" } as const;
+const authTitles = { "sign-in": "session.signIn", register: "auth.createAccount", "password-reset": "reset.submit" } as const;
 type Props = { params: Promise<{ page: string }>; searchParams: Promise<{ next?: string; token?: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const page = (await params).page;
   const legalTitle = ["privacy", "terms", "editorial", "corrections"].includes(page) ? publicationPolicies().pages[page].title : undefined;
-  const title = legalTitle || authTitles[page as keyof typeof authTitles] || (page === "profile" ? "Your profile" : page === "verify-email" ? "Verify your email" : page);
-  return { title, alternates: { canonical: `/${page}` }, robots: page === "profile" || page === "verify-email" || page in authPages ? { index: false, follow: false } : undefined };
+  const { prefix, t } = await requestLocale();
+  const authTitle = Object.hasOwn(authTitles, page) ? t(authTitles[page as keyof typeof authTitles]) : undefined;
+  const title = legalTitle || authTitle || (page === "profile" ? t("meta.profile") : page === "verify-email" ? t("verify.title") : page);
+  return { title, alternates: alternates(prefix, `/${page}`), robots: page === "profile" || page === "verify-email" || page in authPages ? { index: false, follow: false } : undefined };
 }
 export default async function UtilityPage({ params, searchParams }: Props) {
   const page = (await params).page;
@@ -26,9 +30,10 @@ export default async function UtilityPage({ params, searchParams }: Props) {
   if (page === "profile") return <AuthenticatedArea><AccountSettings /></AuthenticatedArea>;
   const policies = publicationPolicies();
   const legal = Object.hasOwn(policies.pages, page) ? policies.pages[page] : undefined;
+  const { t } = await requestLocale();
   if (legal) return <article className="legal shell"><p className="eyebrow">{policies.publisher}</p><h1>{legal.title}</h1>
-    {!policies.approved && <p className="notice">Draft publication policy. Publisher, editorial and privacy approval is required before public launch.</p>}
-    <p>Policy version: {policies.version}{policies.effectiveDate && <> · Effective <time dateTime={policies.effectiveDate}>{policies.effectiveDate}</time></>}</p>
+    {!policies.approved && <p className="notice">{t("policy.draft")}</p>}
+    <p>{t("policy.version", { version: policies.version })}{policies.effectiveDate && <> · {t("policy.effective")} <time dateTime={policies.effectiveDate}>{policies.effectiveDate}</time></>}</p>
     {legal.sections.map(({ heading, paragraphs }) => <section key={heading}><h2>{heading}</h2>{paragraphs.map((copy, index) => <p key={index}>{copy}</p>)}</section>)}</article>;
   notFound();
 }

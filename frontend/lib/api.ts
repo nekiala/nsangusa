@@ -12,10 +12,18 @@ export type ApiArticle = {
   storyCandidateId: Identifier | null; seoTitle: string; seoDescription: string;
   approvedImageGenerationId: Identifier | null; pendingImageGenerationId: Identifier | null; imageApprovalRequired: boolean;
   correctionNote: string | null; approvedBy: Identifier | null; approvedAt: string | null;
+  language?: ContentLanguage; translations?: ArticleTranslation[];
+};
+export type ContentLanguage = "fr" | "en";
+/** One language's reader-facing text for an article written in another. */
+export type ArticleTranslation = {
+  language: ContentLanguage; headline: string; summary: string; body: string; editorialContext?: string | null;
+  seoTitle: string; seoDescription: string; imageAltText?: string | null;
 };
 export type ArticleCommand = {
   headline: string; summary: string; body?: string; content?: ArticleContent | null; editorialContext?: string | null; seoTitle: string;
   seoDescription: string; slugSuggestion: string; topic: string; tags: string[]; sources: ArticleSource[]; commentsEnabled: boolean;
+  translations?: ArticleTranslation[];
 };
 export type Comment = { id: Identifier; authorId: Identifier; body: string; parentId?: Identifier | null; state: string };
 export type UserProfile = { id: Identifier; email: string; displayName: string; roles: string[] };
@@ -23,7 +31,7 @@ export type Problem = { type?: string; title: string; status: number; detail: st
 export type OperationalSummary = { status: "available"; checkedAt: string; details: string };
 export type SearchResult = {
   articleId: Identifier; slug: string; headline: string; summary: string; topic: string;
-  tags: string[]; publishedAt: string; rank: number;
+  tags: string[]; publishedAt: string; rank: number; hasImage?: boolean;
 };
 export type SearchPage = { items: SearchResult[]; page: number; size: number; total: number };
 export type Page<T> = { items: T[]; page: number; size: number; total: number };
@@ -196,6 +204,8 @@ export function createApiClient(options: ClientOptions = {}) {
         if (unsafe) csrf ||= await bootstrapCsrf();
         if (unsafe && csrf) headers.set(csrf.headerName, csrf.token);
         if (init.body && !headers.has("Content-Type") && !(init.body instanceof URLSearchParams)) headers.set("Content-Type", "application/json");
+        // Emails triggered by this request follow the language of the page the reader is on.
+        if (typeof document !== "undefined" && document.documentElement.lang && !headers.has("Accept-Language")) headers.set("Accept-Language", document.documentElement.lang);
         const response = await fetcher(`${baseUrl}${path}`, {
           ...init, headers, credentials: "include", cache: "no-store", next: { revalidate: 0 }
         } as WebRequestInit);
@@ -285,7 +295,7 @@ export function createApiClient(options: ClientOptions = {}) {
     },
     articles: {
       latest: (limit = 20) => request<ApiArticle[]>(`/api/v1/articles?limit=${encodeURIComponent(limit)}`),
-      bySlug: (slug: string) => request<ApiArticle>(`/api/v1/articles/${encodeURIComponent(slug)}`),
+      bySlug: (slug: string, lang?: ContentLanguage) => request<ApiArticle>(`/api/v1/articles/${encodeURIComponent(slug)}${lang ? `?lang=${lang}` : ""}`),
       search: (query: string, page = 0, size = 20) => request<SearchPage>(`/api/v1/search?q=${encodeURIComponent(query)}&page=${page}&size=${size}`),
       byTopic: (topic: string, page = 0, size = 20) => request<SearchPage>(`/api/v1/topics/${encodeURIComponent(topic)}?page=${page}&size=${size}`),
       byTag: (tag: string, page = 0, size = 20) => request<SearchPage>(`/api/v1/tags/${encodeURIComponent(tag)}?page=${page}&size=${size}`),

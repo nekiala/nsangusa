@@ -20,4 +20,19 @@ describe("the HTML nonce proxy", () => {
     expect(response.headers.get("Cache-Control")).toBe("private, no-store, max-age=0");
     expect(proxy(request).headers.get("Content-Security-Policy")).not.toBe(policy);
   });
+
+  it("rewrites /en pages to the shared routes and gives French a single address", () => {
+    const english = proxy(new NextRequest("http://127.0.0.1:3000/en/latest?page=2"));
+    expect(new URL(english.headers.get("x-middleware-rewrite")!).pathname + new URL(english.headers.get("x-middleware-rewrite")!).search).toBe("/latest?page=2");
+    expect(english.headers.get("x-middleware-request-x-locale")).toBe("en");
+    expect(english.headers.get("Content-Security-Policy")).toBeTruthy();
+
+    const french = proxy(new NextRequest("http://127.0.0.1:3000/latest", { headers: { "x-locale": "en" } }));
+    expect(french.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(french.headers.get("x-middleware-request-x-locale")).toBe("fr");
+
+    const redirect = proxy(new NextRequest("http://127.0.0.1:3000/fr/latest"));
+    expect(redirect.status).toBe(308);
+    expect(new URL(redirect.headers.get("location")!).pathname).toBe("/latest");
+  });
 });

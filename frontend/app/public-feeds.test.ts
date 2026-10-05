@@ -34,7 +34,10 @@ describe("bounded public syndication", () => {
     ]);
     const response = await segment(request("/sitemaps/articles/2.xml"), { params: Promise.resolve({ segment: "2.xml" }) });
     const last = parse(await response.text());
-    expect(last.querySelectorAll("url")).toHaveLength(35);
+    // Each article is listed once per language, with both languages as alternates.
+    expect(last.querySelectorAll("url")).toHaveLength(70);
+    expect(last.querySelectorAll("url")[1].querySelector("loc")?.textContent).toContain("/en/articles/");
+    expect(last.querySelectorAll("url")[0].getElementsByTagName("xhtml:link")).toHaveLength(2);
     expect(last.querySelector("lastmod")?.textContent).toBe("2026-09-02T12:00:00Z");
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(published).toHaveBeenLastCalledWith(2, FEED_PAGE_SIZE);
@@ -53,7 +56,7 @@ describe("bounded public syndication", () => {
     const links = [...xml.getElementsByTagNameNS("http://www.w3.org/2005/Atom", "link")];
     expect(links.map((node) => [node.getAttribute("rel"), node.getAttribute("href")])).toContainEqual(["next", "http://localhost:3000/rss.xml?page=3"]);
     expect(links.map((node) => node.getAttribute("rel"))).toEqual(["self", "first", "last", "previous", "next"]);
-    expect(publicApi.published).toHaveBeenCalledWith(1, 100);
+    expect(publicApi.published).toHaveBeenCalledWith(1, 100, "fr");
   });
   it("reflects withdrawals and reports invalid pages or outages explicitly", async () => {
     vi.spyOn(publicApi, "published").mockResolvedValue({ items: [], page: 0, size: 100, total: 0 });

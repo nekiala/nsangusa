@@ -59,7 +59,7 @@ describe("public publication freshness", () => {
     vi.spyOn(contentApi, "related").mockResolvedValue([]);
     const props = { params: Promise.resolve({ slug: article.slug }) };
     const metadata = await generateMetadata(props);
-    expect(metadata.alternates).toEqual({ canonical: `/articles/${article.slug}` });
+    expect(metadata.alternates).toMatchObject({ canonical: `/articles/${article.slug}` });
     expect(metadata.openGraph).toMatchObject({ type: "article", publishedTime: "2026-09-01T12:00:00Z", modifiedTime: "2026-09-02T12:00:00Z" });
     const { container } = render(await ArticlePage(props));
     expect(within(screen.getByRole("navigation", { name: "Tags" })).getAllByRole("link")).toHaveLength(article.tags.length);
