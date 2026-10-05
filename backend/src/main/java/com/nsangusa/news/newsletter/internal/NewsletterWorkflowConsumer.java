@@ -49,6 +49,9 @@ class NewsletterWorkflowConsumer {
   }
 
   @KafkaListener(topics = EventTopics.PUBLICATION, groupId = "newsletter-request-v1")
+  @KafkaListener(
+      topics = EventTopics.PUBLICATION_RETRY,
+      groupId = "newsletter-request-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void publication(String json) {
     if (!"ArticlePublished".equals(reader.eventType(json))) {
@@ -76,6 +79,9 @@ class NewsletterWorkflowConsumer {
   }
 
   @KafkaListener(topics = EventTopics.NOTIFICATIONS, groupId = "newsletter-delivery-v1")
+  @KafkaListener(
+      topics = EventTopics.NOTIFICATIONS_RETRY,
+      groupId = "newsletter-delivery-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void dispatch(String json) {
     if (!"NewsletterDispatchRequested".equals(reader.eventType(json))) {
@@ -95,6 +101,7 @@ class NewsletterWorkflowConsumer {
                             event.payload().campaignKey(),
                             event.payload().articleId(),
                             "immediate")));
+    java.util.Map<String, String> headlines = new java.util.HashMap<>();
     for (var subscription :
         subscriptions.findByStatusAndFrequencyIn("confirmed", List.of("immediate", "all"))) {
       if (suppressions.existsByEmailHash(hash(subscription.email))) {
@@ -112,32 +119,48 @@ class NewsletterWorkflowConsumer {
       } catch (org.springframework.dao.DataIntegrityViolationException duplicateReservation) {
         continue;
       }
-      String articleUrl = publicBaseUrl + "/articles/" + event.payload().slug();
+      var wording = NewsletterText.in(subscription.language);
+      String headline =
+          headlines.computeIfAbsent(
+              wording.language(),
+              language -> headline(event.payload().slug(), language, event.payload().headline()));
+      String articleUrl = wording.url(publicBaseUrl, "/articles/" + event.payload().slug());
+      String preferencesUrl = wording.url(publicBaseUrl, "/newsletter/preferences");
       String unsubscribeUrl =
-          publicBaseUrl
-              + "/newsletter/unsubscribe?id="
-              + subscription.id
-              + "&token="
-              + unsubscribeTokens.tokenFor(subscription.id);
+          wording.url(
+              publicBaseUrl,
+              "/newsletter/unsubscribe?id="
+                  + subscription.id
+                  + "&token="
+                  + unsubscribeTokens.tokenFor(subscription.id));
       String text =
-          event.payload().headline()
+          headline
               + "\n\n"
               + articleUrl
-              + "\n\nUnsubscribe: "
+              + "\n\n"
+              + wording.unsubscribe()
+              + ": "
               + unsubscribeUrl
-              + "\nManage preferences: "
-              + publicBaseUrl
-              + "/newsletter/preferences";
+              + "\n"
+              + wording.managePreferences()
+              + ": "
+              + preferencesUrl;
       String html =
           "<h1>"
-              + org.owasp.encoder.Encode.forHtml(event.payload().headline())
+              + org.owasp.encoder.Encode.forHtml(headline)
               + "</h1><p><a href=\""
               + org.owasp.encoder.Encode.forHtmlAttribute(articleUrl)
-              + "\">Read the article</a></p><p><a href=\""
+              + "\">"
+              + org.owasp.encoder.Encode.forHtml(wording.readArticle())
+              + "</a></p><p><a href=\""
               + org.owasp.encoder.Encode.forHtmlAttribute(unsubscribeUrl)
-              + "\">Unsubscribe</a></p><p><a href=\""
-              + org.owasp.encoder.Encode.forHtmlAttribute(publicBaseUrl + "/newsletter/preferences")
-              + "\">Manage preferences</a></p>";
+              + "\">"
+              + org.owasp.encoder.Encode.forHtml(wording.unsubscribe())
+              + "</a></p><p><a href=\""
+              + org.owasp.encoder.Encode.forHtmlAttribute(preferencesUrl)
+              + "\">"
+              + org.owasp.encoder.Encode.forHtml(wording.managePreferences())
+              + "</a></p>";
       try {
         deliveryReservations.delivered(
             attempt.deliveryId(),
@@ -145,16 +168,23 @@ class NewsletterWorkflowConsumer {
             mailSender.sendNewsletter(
                 attempt.providerIdempotencyKey(),
                 subscription.email,
-                event.payload().headline(),
+                headline,
                 text,
                 html,
                 publicBaseUrl
                     + "/api/v1/newsletter/unsubscribe?id="
                     + subscription.id
                     + "&token="
-                    + unsubscribeTokens.tokenFor(subscription.id)));
+                    + unsubscribeTokens.tokenFor(subscription.id)),
+            event.correlationId(),
+            event.eventId());
       } catch (RuntimeException exception) {
-        deliveryReservations.failed(attempt.deliveryId(), attempt.attemptToken(), "provider_error");
+        deliveryReservations.failed(
+            attempt.deliveryId(),
+            attempt.attemptToken(),
+            "provider_error",
+            event.correlationId(),
+            event.eventId());
         throw exception;
       }
     }
@@ -170,6 +200,26 @@ class NewsletterWorkflowConsumer {
                   .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     } catch (java.security.NoSuchAlgorithmException exception) {
       throw new IllegalStateException(exception);
+    }
+  }
+
+  private com.nsangusa.news.articles.ArticleService articles;
+
+  /** Supplies translated headlines; without it every subscriber gets the published headline. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  void setArticles(com.nsangusa.news.articles.ArticleService articles) {
+    this.articles = articles;
+  }
+
+  private String headline(String slug, String language, String published) {
+    if (articles == null) {
+      return published;
+    }
+    try {
+      return articles.getPublishedBySlug(slug, language).headline();
+    } catch (RuntimeException unavailable) {
+      // The article may have been withdrawn since the event; the event's headline still applies.
+      return published;
     }
   }
 }

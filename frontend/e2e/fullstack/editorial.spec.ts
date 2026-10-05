@@ -1,4 +1,5 @@
-import { expect, type APIRequestContext, type Page as BrowserPage } from "@playwright/test";
+import { english, expect } from "../english";
+import { type APIRequestContext, type Page as BrowserPage } from "@playwright/test";
 import type { ApiArticle, ImageGeneration, Page, PublicationSchedule, RevisionView, StoryCandidate } from "../../lib/api";
 import { clickMutation, mutate, test } from "./phase4-helpers";
 
@@ -299,7 +300,7 @@ test("real editorial pipeline, corrections, revision history, schedule managemen
   const createdResponse = await createdArticle;
   expect(createdResponse.status()).toBe(201);
   const scheduledId = (await createdResponse.json() as { id: string }).id;
-  await expect(page).toHaveURL(new URL(`/admin/editor/${scheduledId}`, frontend).href);
+  await expect(page).toHaveURL(new URL(english(`/admin/editor/${scheduledId}`), frontend).href);
   await expect(page.getByTestId("article-state")).toContainText("AWAITING_REVIEW");
   await page.getByRole("button", { name: "Approve article" }).click();
   await expect(page.getByTestId("article-state")).toContainText("APPROVED");

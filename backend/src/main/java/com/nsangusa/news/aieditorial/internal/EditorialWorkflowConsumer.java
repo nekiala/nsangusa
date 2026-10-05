@@ -16,6 +16,7 @@ import com.nsangusa.news.integration.EventTopics;
 import com.nsangusa.news.integration.NewsEvents.ArticleDraftGenerated;
 import com.nsangusa.news.integration.NewsEvents.ArticleDraftRequested;
 import com.nsangusa.news.integration.NewsEvents.StoryAnalysisBlocked;
+import com.nsangusa.news.integration.NewsEvents.StoryAnalysisCompleted;
 import com.nsangusa.news.integration.NewsEvents.StoryAnalysisRequested;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validator;
@@ -67,6 +68,9 @@ class EditorialWorkflowConsumer {
   }
 
   @KafkaListener(topics = EventTopics.EDITORIAL, groupId = "story-analysis-v1")
+  @KafkaListener(
+      topics = EventTopics.EDITORIAL_RETRY,
+      groupId = "story-analysis-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void analyze(String json) {
     if (!"StoryAnalysisRequested".equals(reader.eventType(json))) {
@@ -160,6 +164,21 @@ class EditorialWorkflowConsumer {
               semantics.validate(normalized);
               return normalized;
             });
+    events.enqueue(
+        "StoryAnalysisCompleted",
+        event.payload().storyCandidateId(),
+        event.correlationId(),
+        event.eventId(),
+        "story-analysis-completed:" + event.payload().storyCandidateId(),
+        new StoryAnalysisCompleted(
+            event.payload().storyCandidateId(),
+            result.confidence(),
+            result.claims().size(),
+            result.warnings(),
+            result.provider(),
+            result.model(),
+            result.promptVersion(),
+            result.generatedAt()));
     var payload =
         new ArticleDraftRequested(
             event.payload().storyCandidateId(),
@@ -179,6 +198,9 @@ class EditorialWorkflowConsumer {
   }
 
   @KafkaListener(topics = EventTopics.EDITORIAL, groupId = "article-drafting-v1")
+  @KafkaListener(
+      topics = EventTopics.EDITORIAL_RETRY,
+      groupId = "article-drafting-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void draft(String json) {
     if (!"ArticleDraftRequested".equals(reader.eventType(json))) {
@@ -227,7 +249,13 @@ class EditorialWorkflowConsumer {
               if (providerDraft.confidence().compareTo(event.payload().confidence()) > 0) {
                 throw new AiProviderException("unsupported_confidence");
               }
-              var reviewedDraft = mergeWarnings(providerDraft, event.payload().warnings());
+              var reviewedDraft =
+                  mergeWarnings(
+                      providerDraft,
+                      java.util.stream.Stream.concat(
+                              event.payload().warnings().stream(),
+                              publishedCaveatWarning(providerDraft).stream())
+                          .toList());
               semantics.validate(reviewedDraft);
               return reviewedDraft;
             });
@@ -286,31 +314,32 @@ class EditorialWorkflowConsumer {
             .distinct()
             .toList();
     return new ArticleDraftGenerated(
-        draft.storyCandidateId(),
-        draft.headline(),
-        draft.summary(),
-        draft.body(),
-        draft.editorialContext(),
-        draft.seoTitle(),
-        draft.seoDescription(),
-        draft.slugSuggestion(),
-        draft.tags(),
-        draft.topic(),
-        draft.sources(),
-        draft.claims(),
-        draft.confidence(),
-        warnings,
-        draft.safetyFlags(),
-        true,
-        draft.imagePrompt(),
-        draft.imageAltText(),
-        draft.socialPreviewText(),
-        draft.provider(),
-        draft.model(),
-        draft.promptVersion(),
-        draft.inputTokens(),
-        draft.outputTokens(),
-        draft.generatedAt());
+            draft.storyCandidateId(),
+            draft.headline(),
+            draft.summary(),
+            draft.body(),
+            draft.editorialContext(),
+            draft.seoTitle(),
+            draft.seoDescription(),
+            draft.slugSuggestion(),
+            draft.tags(),
+            draft.topic(),
+            draft.sources(),
+            draft.claims(),
+            draft.confidence(),
+            warnings,
+            draft.safetyFlags(),
+            true,
+            draft.imagePrompt(),
+            draft.imageAltText(),
+            draft.socialPreviewText(),
+            draft.provider(),
+            draft.model(),
+            draft.promptVersion(),
+            draft.inputTokens(),
+            draft.outputTokens(),
+            draft.generatedAt())
+        .withLanguages(draft.language(), draft.translations());
   }
 
   private static String generatedContent(ArticleDraftGenerated draft) {
@@ -330,9 +359,59 @@ class EditorialWorkflowConsumer {
                 draft.imagePrompt(),
                 draft.imageAltText(),
                 draft.socialPreviewText()),
-            draft.claims().stream().map(claim -> claim.text()))
+            java.util.stream.Stream.concat(
+                draft.claims().stream().map(claim -> claim.text()), translatedText(draft).stream()))
         .filter(java.util.Objects::nonNull)
         .collect(java.util.stream.Collectors.joining("\n\n"));
+  }
+
+  static final String CAVEAT_IN_TEXT = "verification-caveat-in-published-text";
+
+  // Verification status belongs in editor notes. The model is told so but does not always comply,
+  // so the editor is told when a draft's reader-facing text carries such a statement.
+  private static final java.util.regex.Pattern VERIFICATION_CAVEAT =
+      java.util.regex.Pattern.compile(
+          "unverified|unconfirmed|independent(ly)? (confirm|verif)|human review"
+              + "|further verification|confirmation ind[ée]pendante|v[ée]rification suppl[ée]mentaire"
+              + "|revue humaine|relecture humaine"
+              + "|(pas|non|not( yet)?( been)?)( [ée]t[ée])?( independently)? (v[ée]rifi|confirm)",
+          java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
+
+  static java.util.Optional<String> publishedCaveatWarning(ArticleDraftGenerated draft) {
+    var published =
+        java.util.stream.Stream.concat(
+                java.util.stream.Stream.of(
+                    draft.headline(),
+                    draft.summary(),
+                    draft.body(),
+                    draft.seoTitle(),
+                    draft.seoDescription(),
+                    draft.socialPreviewText()),
+                translatedText(draft).stream())
+            .filter(java.util.Objects::nonNull);
+    return published.anyMatch(text -> VERIFICATION_CAVEAT.matcher(text).find())
+        ? java.util.Optional.of(CAVEAT_IN_TEXT)
+        : java.util.Optional.empty();
+  }
+
+  /** Every translated field, so translations pass the same generated-content checks. */
+  static List<String> translatedText(ArticleDraftGenerated draft) {
+    if (draft.translations() == null) {
+      return List.of();
+    }
+    return draft.translations().stream()
+        .flatMap(
+            translation ->
+                java.util.stream.Stream.of(
+                    translation.headline(),
+                    translation.summary(),
+                    translation.body(),
+                    translation.editorialContext(),
+                    translation.seoTitle(),
+                    translation.seoDescription(),
+                    translation.imageAltText()))
+        .filter(java.util.Objects::nonNull)
+        .toList();
   }
 
   private static ArticleDraftGenerated mergeGeneratedSafety(
@@ -346,31 +425,32 @@ class EditorialWorkflowConsumer {
             .distinct()
             .toList();
     return new ArticleDraftGenerated(
-        draft.storyCandidateId(),
-        draft.headline(),
-        draft.summary(),
-        draft.body(),
-        draft.editorialContext(),
-        draft.seoTitle(),
-        draft.seoDescription(),
-        draft.slugSuggestion(),
-        draft.tags(),
-        draft.topic(),
-        draft.sources(),
-        draft.claims(),
-        draft.confidence(),
-        warnings,
-        flags,
-        true,
-        draft.imagePrompt(),
-        draft.imageAltText(),
-        draft.socialPreviewText(),
-        draft.provider(),
-        draft.model(),
-        draft.promptVersion(),
-        draft.inputTokens(),
-        draft.outputTokens(),
-        draft.generatedAt());
+            draft.storyCandidateId(),
+            draft.headline(),
+            draft.summary(),
+            draft.body(),
+            draft.editorialContext(),
+            draft.seoTitle(),
+            draft.seoDescription(),
+            draft.slugSuggestion(),
+            draft.tags(),
+            draft.topic(),
+            draft.sources(),
+            draft.claims(),
+            draft.confidence(),
+            warnings,
+            flags,
+            true,
+            draft.imagePrompt(),
+            draft.imageAltText(),
+            draft.socialPreviewText(),
+            draft.provider(),
+            draft.model(),
+            draft.promptVersion(),
+            draft.inputTokens(),
+            draft.outputTokens(),
+            draft.generatedAt())
+        .withLanguages(draft.language(), draft.translations());
   }
 
   private <T> T audited(

@@ -56,6 +56,15 @@ final class ContractSchemas {
     return JSON.readTree(ROOT.resolve("compatibility/v1").resolve(file).toFile());
   }
 
+  /**
+   * Every frozen event baseline; later baselines add event types without rewriting earlier ones.
+   */
+  static java.util.List<JsonNode> eventCorpora() throws IOException {
+    return java.util.List.of(
+        fixture("events.json"),
+        JSON.readTree(ROOT.resolve("compatibility/v1-additions-2026-10-01/events.json").toFile()));
+  }
+
   static JsonNode openApi() {
     return OPEN_API.deepCopy();
   }

@@ -31,7 +31,7 @@ final class EventJsonShape {
         require(
             text.matches(
                 "\\d{4}-\\d{2}-\\d{2}[Tt]\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?([Zz]|[+-]\\d{2}:\\d{2})"));
-        OffsetDateTime.parse(text);
+        OffsetDateTime.parse(text); // NOPMD - parsing rejects impossible dates such as Feb 30
       }
     } else if (raw == boolean.class || raw == Boolean.class) {
       require(value.isBoolean());

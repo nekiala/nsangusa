@@ -11,6 +11,7 @@ import com.nsangusa.news.integration.SystemActors;
 import com.nsangusa.news.sourceingestion.SourceIngestionService;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -97,14 +98,22 @@ class ArticleApplicationService implements ArticleService {
   @Override
   @Transactional(readOnly = true)
   public ArticleView getPublishedBySlug(String slug) {
-    return view(
-        articles
-            .findBySlugAndState(slug, ArticleState.PUBLISHED)
-            .orElseThrow(
-                () ->
-                    new org.springframework.web.server.ResponseStatusException(
-                        org.springframework.http.HttpStatus.NOT_FOUND,
-                        "Published article not found")));
+    return getPublishedBySlug(slug, null);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public ArticleView getPublishedBySlug(String slug, String language) {
+    return localized(
+        language,
+        view(
+            articles
+                .findBySlugAndState(slug, ArticleState.PUBLISHED)
+                .orElseThrow(
+                    () ->
+                        new org.springframework.web.server.ResponseStatusException(
+                            org.springframework.http.HttpStatus.NOT_FOUND,
+                            "Published article not found"))));
   }
 
   @Override
@@ -121,34 +130,46 @@ class ArticleApplicationService implements ArticleService {
 
   @Override
   @Transactional(readOnly = true)
-  public PublicArticlePage published(int page, int size) {
+  public PublicArticlePage published(int page, int size, String language) {
     if (page < 0 || page > 49_999 || size < 1 || size > 100) {
       throw new IllegalArgumentException("Page must be 0–49999 and size between 1 and 100");
     }
     var result = articles.findPublished(PageRequest.of(page, size));
     return new PublicArticlePage(
-        result.getContent().stream().map(this::summary).toList(),
-        page,
-        size,
-        result.getTotalElements());
+        summaries(result.getContent(), language), page, size, result.getTotalElements());
   }
 
   @Override
   @Transactional(readOnly = true)
-  public List<ArticleSummary> related(String slug, int limit) {
+  public List<ArticleSummary> related(String slug, int limit, String language) {
     if (limit < 1 || limit > 20) {
       throw new IllegalArgumentException("Limit must be between 1 and 20");
     }
     getPublishedBySlug(slug);
-    return articles.findRelated(slug, limit).stream().map(this::summary).toList();
+    return summaries(articles.findRelated(slug, limit), language);
   }
 
-  private ArticleSummary summary(ArticleRepository.PublicEntry article) {
+  /** Summaries carrying the requested language's headline and summary where a version exists. */
+  private List<ArticleSummary> summaries(
+      List<? extends ArticleRepository.PublicEntry> entries, String language) {
+    Map<UUID, ArticleTranslationEntity> translated =
+        language == null || entries.isEmpty()
+            ? Map.of()
+            : articles
+                .findTranslations(
+                    entries.stream().map(ArticleRepository.PublicEntry::getId).toList(), language)
+                .stream()
+                .collect(Collectors.toMap(translation -> translation.article.id, t -> t));
+    return entries.stream().map(entry -> summary(entry, translated.get(entry.getId()))).toList();
+  }
+
+  private ArticleSummary summary(
+      ArticleRepository.PublicEntry article, ArticleTranslationEntity translation) {
     return new ArticleSummary(
         article.getId(),
         article.getSlug(),
-        article.getHeadline(),
-        article.getSummary(),
+        translation == null ? article.getHeadline() : translation.headline,
+        translation == null ? article.getSummary() : translation.summary,
         article.getTopic(),
         Arrays.stream(article.getTags().split(","))
             .map(String::trim)
@@ -157,7 +178,8 @@ class ArticleApplicationService implements ArticleService {
             .sorted()
             .toList(),
         article.getPublishedAt(),
-        article.getUpdatedAt());
+        article.getUpdatedAt(),
+        Boolean.TRUE.equals(article.getHasImage()));
   }
 
   @Override
@@ -465,6 +487,71 @@ class ArticleApplicationService implements ArticleService {
         article.correctionNote,
         article.approvedBy,
         article.approvedAt,
-        article.effectiveContent());
+        article.effectiveContent(),
+        article.language,
+        article.translations.stream()
+            .map(
+                translation ->
+                    new ArticleService.TranslationView(
+                        translation.language,
+                        translation.headline,
+                        translation.summary,
+                        translation.body,
+                        translation.editorialContext,
+                        translation.seoTitle,
+                        translation.seoDescription,
+                        translation.imageAltText))
+            .toList());
+  }
+
+  /**
+   * The article as a reader of {@code language} sees it: that language's text when the article was
+   * written in it or translated into it, otherwise the original. {@code language} on the result is
+   * the language actually served.
+   */
+  private static ArticleView localized(String language, ArticleView article) {
+    if (language == null || language.equals(article.language())) {
+      return article;
+    }
+    var translation =
+        article.translations().stream()
+            .filter(candidate -> candidate.language().equals(language))
+            .findFirst();
+    if (translation.isEmpty()) {
+      return article;
+    }
+    var text = translation.orElseThrow();
+    return new ArticleView(
+        article.id(),
+        article.slug(),
+        text.headline(),
+        text.summary(),
+        text.body(),
+        text.editorialContext(),
+        article.topic(),
+        article.tags(),
+        article.state(),
+        article.heroObjectKey(),
+        text.imageAltText() == null ? article.imageAltText() : text.imageAltText(),
+        article.generatedImage(),
+        article.commentsEnabled(),
+        article.publishedAt(),
+        article.updatedAt(),
+        article.version(),
+        article.sources(),
+        article.warnings(),
+        article.confidence(),
+        article.storyCandidateId(),
+        text.seoTitle(),
+        text.seoDescription(),
+        article.approvedImageGenerationId(),
+        article.pendingImageGenerationId(),
+        article.imageApprovalRequired(),
+        article.correctionNote(),
+        article.approvedBy(),
+        article.approvedAt(),
+        com.nsangusa.news.articles.ArticleContent.fromBody(text.body()),
+        text.language(),
+        article.translations());
   }
 }

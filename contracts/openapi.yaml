@@ -505,6 +505,7 @@ paths:
       summary: Get a published article by slug
       security: []
       parameters:
+      - "$ref": "#/components/parameters/ContentLanguage"
       - "$ref": "#/components/parameters/Slug"
       responses:
         '200':
@@ -2022,6 +2023,7 @@ paths:
         with visibility changes.
       security: []
       parameters:
+      - "$ref": "#/components/parameters/ContentLanguage"
       - name: q
         in: query
         required: true
@@ -2100,6 +2102,7 @@ paths:
         empty items array, not an API 404.
       security: []
       parameters:
+      - "$ref": "#/components/parameters/ContentLanguage"
       - name: topic
         in: path
         required: true
@@ -2178,6 +2181,7 @@ paths:
         empty items array, not an API 404.
       security: []
       parameters:
+      - "$ref": "#/components/parameters/ContentLanguage"
       - name: tag
         in: path
         required: true
@@ -3948,6 +3952,7 @@ paths:
         and the current total.
       security: []
       parameters:
+      - "$ref": "#/components/parameters/ContentLanguage"
       - name: page
         in: query
         schema:
@@ -3987,6 +3992,7 @@ paths:
         fallback is used.
       security: []
       parameters:
+      - "$ref": "#/components/parameters/ContentLanguage"
       - $ref: '#/components/parameters/Slug'
       - name: limit
         in: query
@@ -4920,6 +4926,14 @@ components:
       type: http
       scheme: basic
   parameters:
+    ContentLanguage:
+      name: lang
+      in: query
+      required: false
+      description: Preferred language for reader-facing article text. Unsupported values are ignored.
+      schema:
+        type: string
+        enum: [fr, en]
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -5890,6 +5904,50 @@ components:
         approvedAt:
           type: [string, 'null']
           format: date-time
+        language:
+          description: Language of this response's reader-facing text. Public reads serve the requested language when the article was written in or translated into it, otherwise the original.
+          type: string
+          enum: [fr, en]
+        translations:
+          description: Reader-facing text in the languages other than the article's own.
+          type: array
+          maxItems: 4
+          items:
+            "$ref": "#/components/schemas/ArticleTranslation"
+    ArticleTranslation:
+      type: object
+      additionalProperties: false
+      required: [language, headline, summary, body, seoTitle, seoDescription]
+      properties:
+        language:
+          type: string
+          enum: [fr, en]
+        headline:
+          type: string
+          minLength: 1
+          maxLength: 300
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        body:
+          type: string
+          minLength: 1
+          maxLength: 100000
+        editorialContext:
+          type: [string, 'null']
+          maxLength: 20000
+        seoTitle:
+          type: string
+          minLength: 1
+          maxLength: 300
+        seoDescription:
+          type: string
+          minLength: 1
+          maxLength: 500
+        imageAltText:
+          type: [string, 'null']
+          maxLength: 500
     ArticleContent:
       type: object
       additionalProperties: false
@@ -5980,6 +6038,12 @@ components:
           anyOf:
           - "$ref": "#/components/schemas/ArticleContent"
           - type: 'null'
+        translations:
+          description: Optional. When supplied, replaces the article's translations; omitted or null leaves them unchanged.
+          type: [array, 'null']
+          maxItems: 4
+          items:
+            "$ref": "#/components/schemas/ArticleTranslation"
         editorialContext:
           type:
           - string
@@ -6435,6 +6499,9 @@ components:
       - publishedAt
       - rank
       properties:
+        hasImage:
+          description: Whether an approved illustration is available at the article image endpoint.
+          type: boolean
         articleId:
           "$ref": "#/components/schemas/Identifier"
         slug:
@@ -7778,6 +7845,9 @@ components:
       - publishedAt
       - updatedAt
       properties:
+        hasImage:
+          description: Whether an approved illustration is available at the article image endpoint.
+          type: boolean
         id:
           $ref: '#/components/schemas/Identifier'
         slug:
@@ -7843,6 +7913,9 @@ components:
       - updatedAt
       - rank
       properties:
+        hasImage:
+          description: Whether an approved illustration is available at the article image endpoint.
+          type: boolean
         articleId:
           $ref: '#/components/schemas/Identifier'
         slug:

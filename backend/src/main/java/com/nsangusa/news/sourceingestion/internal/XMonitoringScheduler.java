@@ -47,47 +47,7 @@ class XMonitoringScheduler {
   void synchronize() {
     var monitoredAccounts = accounts.findByMonitoringEnabledTrueAndRemovedAtIsNull();
     for (var account : monitoredAccounts) {
-      try {
-        var result = provider.fetchRecent(account.accountId, account.lastPostId);
-        var ordered =
-            result.posts().stream()
-                .sorted(Comparator.comparing(XSourceProvider.Post::publishedAt))
-                .toList();
-        String lastPostId = account.lastPostId;
-        for (var post : ordered) {
-          reconcileTimelinePost(account, post);
-          lastPostId = post.postId();
-        }
-        reconcileExisting(account);
-        ingestion.markSync(
-            account.id,
-            lastPostId,
-            result.rateLimitResetAt(),
-            result.rateLimitLimit(),
-            result.rateLimitRemaining(),
-            null);
-      } catch (org.springframework.web.client.HttpClientErrorException.TooManyRequests exception) {
-        var headers = exception.getResponseHeaders();
-        ingestion.markSync(
-            account.id,
-            account.lastPostId,
-            parseReset(
-                headers == null ? null : headers.getFirst("x-rate-limit-reset"),
-                account.rateLimitResetAt),
-            parseInteger(
-                headers == null ? null : headers.getFirst("x-rate-limit-limit"),
-                account.rateLimitLimit),
-            0,
-            "rate_limited");
-      } catch (RuntimeException exception) {
-        ingestion.markSync(
-            account.id,
-            account.lastPostId,
-            account.rateLimitResetAt,
-            account.rateLimitLimit,
-            account.rateLimitRemaining,
-            exception.getClass().getSimpleName());
-      }
+      synchronizeAccount(account);
     }
     Set<java.util.UUID> monitoredIds =
         monitoredAccounts.stream()
@@ -105,6 +65,54 @@ class XMonitoringScheduler {
             account.accountId,
             exception);
       }
+    }
+  }
+
+  /**
+   * Polls one account and records the outcome, including rate limits and failures, on the account.
+   * Provider failures never propagate, so a caller's retries cannot multiply X API calls.
+   */
+  void synchronizeAccount(MonitoredXAccount account) {
+    try {
+      var result = provider.fetchRecent(account.accountId, account.lastPostId);
+      var ordered =
+          result.posts().stream()
+              .sorted(Comparator.comparing(XSourceProvider.Post::publishedAt))
+              .toList();
+      String lastPostId = account.lastPostId;
+      for (var post : ordered) {
+        reconcileTimelinePost(account, post);
+        lastPostId = post.postId();
+      }
+      reconcileExisting(account);
+      ingestion.markSync(
+          account.id,
+          lastPostId,
+          result.rateLimitResetAt(),
+          result.rateLimitLimit(),
+          result.rateLimitRemaining(),
+          null);
+    } catch (org.springframework.web.client.HttpClientErrorException.TooManyRequests exception) {
+      var headers = exception.getResponseHeaders();
+      ingestion.markSync(
+          account.id,
+          account.lastPostId,
+          parseReset(
+              headers == null ? null : headers.getFirst("x-rate-limit-reset"),
+              account.rateLimitResetAt),
+          parseInteger(
+              headers == null ? null : headers.getFirst("x-rate-limit-limit"),
+              account.rateLimitLimit),
+          0,
+          "rate_limited");
+    } catch (RuntimeException exception) {
+      ingestion.markSync(
+          account.id,
+          account.lastPostId,
+          account.rateLimitResetAt,
+          account.rateLimitLimit,
+          account.rateLimitRemaining,
+          exception.getClass().getSimpleName());
     }
   }
 

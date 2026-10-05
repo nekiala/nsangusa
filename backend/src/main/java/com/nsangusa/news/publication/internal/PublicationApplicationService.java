@@ -3,6 +3,8 @@ package com.nsangusa.news.publication.internal;
 import com.nsangusa.news.articles.ArticleService;
 import com.nsangusa.news.articles.ArticleState;
 import com.nsangusa.news.audit.AuditService;
+import com.nsangusa.news.eventprocessing.DurableEventPublisher;
+import com.nsangusa.news.integration.NewsEvents.ArticleScheduled;
 import com.nsangusa.news.publication.PublicationService;
 import java.time.Instant;
 import java.util.List;
@@ -24,16 +26,19 @@ class PublicationApplicationService implements PublicationService {
   private final ArticleService articles;
   private final AuditService audit;
   private final PublicationPolicyEvaluator policy;
+  private final DurableEventPublisher events;
 
   PublicationApplicationService(
       ScheduledPublicationRepository schedules,
       ArticleService articles,
       AuditService audit,
-      PublicationPolicyEvaluator policy) {
+      PublicationPolicyEvaluator policy,
+      DurableEventPublisher events) {
     this.schedules = schedules;
     this.articles = articles;
     this.audit = audit;
     this.policy = policy;
+    this.events = events;
   }
 
   @Override
@@ -62,6 +67,7 @@ class PublicationApplicationService implements PublicationService {
         "publication_schedule",
         schedule.id,
         metadata(schedule));
+    announce(schedule, editorId);
     return schedule.id;
   }
 
@@ -124,6 +130,7 @@ class PublicationApplicationService implements PublicationService {
     metadata.put("previousPublishAt", previous.toString());
     audit.record(
         editorId, "PUBLICATION_SCHEDULE_CHANGED", "publication_schedule", schedule.id, metadata);
+    announce(schedule, editorId);
     return schedule.view();
   }
 
@@ -153,6 +160,22 @@ class PublicationApplicationService implements PublicationService {
   @Override
   public PolicyView policy() {
     return policy.view();
+  }
+
+  // Published with the schedule change; the flushed schedule version identifies each change.
+  private void announce(ScheduledPublication schedule, UUID editorId) {
+    events.enqueue(
+        "ArticleScheduled",
+        schedule.articleId,
+        schedule.articleId,
+        null,
+        "article-scheduled:" + schedule.id + ":" + schedule.version,
+        new ArticleScheduled(
+            schedule.articleId,
+            schedule.id,
+            schedule.scheduledFor,
+            schedule.articleVersion,
+            editorId));
   }
 
   private ScheduledPublication findLocked(UUID id) {

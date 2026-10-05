@@ -1,3 +1,5 @@
+import type { Locale } from "@/lib/i18n";
+
 export const policyVersion = "2026-09-v1";
 export type PolicyPage = { title: string; sections: { heading: string; paragraphs: string[] }[] };
 type Environment = Record<string, string | undefined>;
@@ -11,7 +13,11 @@ function contact(value: string | undefined, name: string): string | undefined {
   return email;
 }
 
-export function publicationPolicies(environment: Environment = process.env) {
+/**
+ * The publication's policy pages in the reader's language. Both languages are the same policy
+ * version: change them together. Operator-supplied details are shown as supplied.
+ */
+export function publicationPolicies(environment: Environment = process.env, locale: Locale = "en") {
   const publisher = environment.PUBLICATION_PUBLISHER?.trim();
   const editorialContact = contact(environment.PUBLICATION_CONTACT_EMAIL, "PUBLICATION_CONTACT_EMAIL");
   const privacyContact = contact(environment.PUBLICATION_PRIVACY_EMAIL, "PUBLICATION_PRIVACY_EMAIL");
@@ -32,7 +38,7 @@ export function publicationPolicies(environment: Environment = process.env) {
     throw new Error("Approved publication policies require real publisher, contact, jurisdiction, retention and effective-date details");
   }
   const approved = approval === policyVersion;
-  const pages: Record<string, PolicyPage> = {
+  const pages: Record<string, PolicyPage> = locale === "fr" ? frenchPages(details) : {
     privacy: {
       title: "Privacy",
       sections: [
@@ -105,4 +111,81 @@ export function publicationPolicies(environment: Environment = process.env) {
     }
   };
   return { pages, approved, publisher: publisher || "Nsangusa", effectiveDate, version: policyVersion };
+}
+
+type Details = { publisher?: string; editorialContact?: string; privacyContact?: string; jurisdiction?: string; retention?: string };
+
+function frenchPages({ publisher, editorialContact, privacyContact, jurisdiction, retention }: Details): Record<string, PolicyPage> {
+  return {
+    privacy: {
+      title: "Confidentialité",
+      sections: [
+        { heading: "Éditeur et contact", paragraphs: [
+          publisher ? `${publisher} est responsable de cette publication.` : "L’identité juridique de l’éditeur doit être fournie avant le lancement.",
+          privacyContact ? `Écrivez à ${privacyContact} au sujet de vos informations ou pour toute demande relative à la confidentialité.` : "Le contact de l’éditeur pour la confidentialité doit être fourni avant le lancement.",
+          jurisdiction ? `Juridiction applicable : ${jurisdiction}.` : "L’éditeur doit confirmer la juridiction applicable et ses obligations en matière de confidentialité avant le lancement."
+        ] },
+        { heading: "Informations utilisées par le service", paragraphs: [
+          "Les comptes utilisent une adresse e-mail, un nom affiché, une empreinte de mot de passe ou une identité de connexion externe liée, un statut de vérification et des sessions côté serveur. Nous conservons également le consentement et les préférences d’infolettre, les registres d’envoi, les commentaires, les signalements d’abus et les traces des actions administratives.",
+          "Des cookies essentiels de session et de protection contre la falsification de requêtes permettent la connexion et protègent les actions. Les jetons d’authentification ne sont pas conservés dans le stockage local du navigateur.",
+          "Les prestataires d’infrastructure, d’identité et d’e-mail configurés traitent les informations nécessaires au fonctionnement du service. Des contenus sources publics peuvent être transmis à des prestataires éditoriaux et d’images approuvés pour préparer les articles. Les contenus sources et les productions de l’IA sont soumis à une relecture éditoriale."
+        ] },
+        { heading: "Vos choix", paragraphs: [
+          "Votre profil donne accès aux informations du compte, aux préférences d’infolettre, à un export des données du compte, à la révocation des sessions et à la suppression du compte. L’export du compte n’est pas un export de l’ensemble des contributions publiées ni des enregistrements opérationnels.",
+          "La suppression du compte désactive la connexion, anonymise le profil, déconnecte les identités externes et désabonne l’infolettre liée. Les contributions publiées et les enregistrements d’audit ou de consentement requis peuvent être conservés. Contactez l’éditeur pour toute autre demande d’accès, de rectification ou de suppression.",
+          "Les abonnements à l’infolettre nécessitent une confirmation. Vous pouvez vous désabonner à l’aide du lien présent dans un e-mail ou gérer vos préférences au moyen d’un lien à durée limitée ; aucun compte n’est requis."
+        ] },
+        { heading: "Conservation", paragraphs: [
+          retention || "L’éditeur doit approuver et publier ses durées de conservation, ses exceptions et sa procédure de suppression avant le lancement.",
+          "La suppression d’un compte ne garantit pas un effacement immédiat de toutes les sauvegardes ni des systèmes de tous les prestataires. La conservation, les obligations légales de conservation et la suppression après restauration d’une sauvegarde doivent suivre la politique approuvée par l’éditeur."
+        ] }
+      ]
+    },
+    terms: {
+      title: "Conditions d’utilisation",
+      sections: [
+        { heading: "Lecture et sources", paragraphs: [
+          "Les articles distinguent les affirmations des sources des informations vérifiées de manière indépendante et du contexte éditorial. Les liens vers des sources externes mènent à des services soumis à leurs propres conditions. Une illustration ne constitue pas la preuve qu’un événement a eu lieu.",
+          "Contactez l’éditeur pour toute question de réutilisation ou de licence. Les contenus sources restent soumis aux droits et autorisations qui leur sont applicables."
+        ] },
+        { heading: "Comptes et participation", paragraphs: [
+          "Gardez vos identifiants confidentiels et révoquez depuis votre profil les sessions que vous ne reconnaissez pas. Signalez à l’éditeur tout soupçon d’utilisation abusive d’un compte.",
+          "Les commentaires peuvent nécessiter une approbation et peuvent être modifiés, rejetés, marqués comme spam ou supprimés conformément à la politique de modération. Ne soumettez pas de contenu relevant du harcèlement, de contenu illicite, d’informations privées concernant des tiers ni de contenu que vous n’êtes pas autorisé à partager. Le droit de commenter peut être suspendu."
+        ] },
+        { heading: "Contact de l’éditeur", paragraphs: [
+          editorialContact ? `Écrivez à ${editorialContact} au sujet de la publication ou des présentes conditions.` : "L’éditeur doit fournir son contact public avant le lancement.",
+          jurisdiction ? `Juridiction applicable : ${jurisdiction}.` : "Les conditions propres à une juridiction nécessitent l’approbation de l’éditeur avant le lancement."
+        ] }
+      ]
+    },
+    editorial: {
+      title: "Charte éditoriale",
+      sections: [
+        { heading: "Preuves et attribution", paragraphs: [
+          "Les articles conservent les liens vers leurs sources et distinguent les faits rapportés du contexte éditorial. Une publication sur un réseau social est une affirmation rapportée, et non une confirmation indépendante. La rédaction prend en compte l’incertitude, les versions contradictoires et le contexte manquant avant publication.",
+          "Des outils d’IA assistent l’analyse et la préparation des brouillons. Ils n’autorisent pas la publication, n’établissent pas la véracité d’une affirmation et ne remplacent pas la responsabilité éditoriale. En production, toute publication exige une relecture humaine."
+        ] },
+        { heading: "Images", paragraphs: [
+          "Les images générées sont présentées comme des illustrations éditoriales et non comme des photographies documentaires. Les illustrations de secours neutres ne sont pas des éléments de preuve générés par IA et exigent une sélection et une approbation éditoriales explicites.",
+          "Les images ne doivent pas laisser entendre qu’un événement non vérifié est avéré. La rédaction examine l’illustration et son texte alternatif séparément de l’article."
+        ] },
+        { heading: "Questions et responsabilité", paragraphs: [
+          editorialContact ? `Adressez vos remarques sur les sources, vos demandes de droit de réponse ou vos questions éditoriales à ${editorialContact}.` : "Un contact éditorial public doit être configuré avant le lancement."
+        ] }
+      ]
+    },
+    corrections: {
+      title: "Rectificatifs",
+      sections: [
+        { heading: "Signaler un problème", paragraphs: [
+          editorialContact ? `Envoyez l’adresse de l’article, le passage contesté et les éléments à l’appui à ${editorialContact}. Évitez d’inclure des informations personnelles inutiles.` : "L’éditeur doit approuver et configurer son contact public pour les rectificatifs avant le lancement. N’envoyez pas d’informations personnelles à des adresses d’exemple ou de démonstration."
+        ] },
+        { heading: "Rectification et retrait", paragraphs: [
+          "Une rectification substantielle retire l’article le temps d’une nouvelle relecture éditoriale. La republication conserve l’URL canonique et la date de publication d’origine, et affiche la note de rectification ainsi que la date de mise à jour.",
+          "La dépublication retire un article des nouvelles consultations publiques du site, des listes, de la recherche, des flux et des plans de site, et empêche tout nouveau commentaire. Elle ne peut pas rappeler les copies déjà téléchargées ni les e-mails déjà distribués.",
+          "Une rectification ou un rétablissement n’entraîne pas automatiquement un nouvel envoi d’infolettre de publication. L’éditeur conserve l’historique éditorial et traite les suppressions de sources ou les restrictions légales conformément à sa politique de conservation approuvée."
+        ] }
+      ]
+    }
+  };
 }

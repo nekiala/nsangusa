@@ -193,6 +193,11 @@ Do not substitute a filtered local run for the complete release gate.
 4. Add breakpoints at source discovery/normalization, story candidate consumer, editorial workflow consumer, article/image consumers, publication consumer, outbox relay, and DLT/retry handling.
 5. Correlate `eventId`, `aggregateId`, `correlationId`, `causationId`, `traceContext`, and `idempotencyKey`.
 6. Use Modulith/integration tests for boundaries and Testcontainers for isolated data tests. Shared Compose is for interactive development.
+7. Formatting is `./gradlew spotlessApply` (google-java-format). Static analysis is
+   `./gradlew pmdMain`, using PMD 7.28.0 with the bug-focused rules in
+   `backend/config/pmd/ruleset.xml`; `check`, `build` and `make test` run both. Suppress a finding
+   only where it is proven false, scoped to that line or member and with the reason stated. The
+   ruleset applies to production code; tests deliberately exercise misuse.
 
 ## Provider switching
 
@@ -203,6 +208,15 @@ write-only project credential encrypted, saves bounded drafts and requires separ
 activation. Production still requires global production mode and all unrelated secure-provider
 configuration. `AI_API_KEY` is no longer the text adapter's credential source; image credentials
 remain independently operator-managed.
+
+`X_LIVE_ENABLED=true` with `X_BEARER_TOKEN` selects the official X API adapter on its own,
+leaving AI, image and mail providers in their configured mode; the preview Compose file passes both
+through. Post simulation is disabled while it is on. Handles added under the fake provider carry
+synthetic account IDs and must be re-resolved against X before they can sync. The token's X App
+must belong to a Project with read access to user lookup and timelines.
+
+`IMAGE_LIVE_ENABLED=true` with `IMAGE_API_KEY` likewise selects the live image adapter on its own;
+the preview Compose file passes both and `IMAGE_MODEL` through.
 
 `AI_AUTHORIZED_MODELS` is a comma-separated deployment ceiling, defaulting to `AI_MODEL`.
 `/admin/ai` selects within that catalog and publishes immutable editorial guidance versions.

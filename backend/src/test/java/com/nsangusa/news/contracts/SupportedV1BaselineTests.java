@@ -16,11 +16,13 @@ class SupportedV1BaselineTests {
             "events.json", "6c7421d05d00986efdd886c3b19cf00c8d997c9c38209196ea8965512d1f423d",
             "http.json", "bc41925ee0e3dfa56db90957c2d80fc2a0e919c7698dca38dd696ebff0b504e6",
             "legacy-image-consumer.schema.json",
-                "b9c1b602c4b4ea9e3761c5bec9f9a47ebb57a7a0ce0f8ecbf3973888634f05cd");
+                "b9c1b602c4b4ea9e3761c5bec9f9a47ebb57a7a0ce0f8ecbf3973888634f05cd",
+            "../v1-additions-2026-10-01/events.json",
+                "0c0db5a8753602e9d4888b4caf5696db1e2d95ac55da6e3c359bec288f637b66");
     for (var entry : checksums.entrySet()) {
       byte[] bytes =
           Files.readAllBytes(
-              ContractSchemas.ROOT.resolve("compatibility/v1").resolve(entry.getKey()));
+              ContractSchemas.ROOT.resolve("compatibility/v1").resolve(entry.getKey()).normalize());
       assertEquals(
           entry.getValue(),
           HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)),

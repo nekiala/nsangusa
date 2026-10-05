@@ -1,11 +1,12 @@
 "use client";
 
+import { tx } from "@/lib/i18n/staff";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "@/lib/api";
 
 export function errorNotice(error: unknown) {
   if (error instanceof ApiError) return `${error.problem.title}: ${error.problem.detail}`;
-  return error instanceof Error ? error.message : "The request could not be completed.";
+  return error instanceof Error ? error.message : tx("The request could not be completed.");
 }
 
 export function useResource<T>(load: () => Promise<T>) {
@@ -44,23 +45,23 @@ export function useAction() {
 }
 
 export function AdminSection({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <section className="admin-content"><p className="eyebrow">Protected workspace</p><h1>{title}</h1><p>{description}</p>{children}</section>;
+  return <section className="admin-content"><p className="eyebrow">{tx("Protected workspace")}</p><h1>{title}</h1><p>{description}</p>{children}</section>;
 }
 
 export function Feedback({ error, status }: { error?: string; status?: string }) {
   return <>{error && <p role="alert" className="notice">{error}</p>}{status && <p role="status" className="notice">{status}</p>}</>;
 }
 
-export function Pagination({ page, size, total, onPage, label = "Queue pages" }: { page: number; size: number; total: number; onPage: (_page: number) => void; label?: string }) {
+export function Pagination({ page, size, total, onPage, label = tx("Queue pages") }: { page: number; size: number; total: number; onPage: (_page: number) => void; label?: string }) {
   return <nav className="workflow-actions" aria-label={label}>
-    <button disabled={page === 0} onClick={() => onPage(page - 1)}>Previous page</button>
+    <button disabled={page === 0} onClick={() => onPage(page - 1)}>{tx("Previous page")}</button>
     <span>Page {page + 1} · {total} total</span>
-    <button disabled={(page + 1) * size >= total} onClick={() => onPage(page + 1)}>Next page</button>
+    <button disabled={(page + 1) * size >= total} onClick={() => onPage(page + 1)}>{tx("Next page")}</button>
   </nav>;
 }
 
 export function dateLabel(value: string | null) {
-  return value ? new Date(value).toLocaleString() : "Not yet";
+  return value ? new Date(value).toLocaleString() : tx("Not yet");
 }
 
 export function safeHttpUrl(value: string) {

@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect } from "../english";
 import { administrator, moderator, mutate, signIn, test } from "./phase4-helpers";
 
 for (const { role, account, links } of [
@@ -21,13 +21,13 @@ for (const { role, account, links } of [
       await expect(page.getByRole("heading", { name: "Profile and account settings" })).toBeVisible();
       await expectSession();
       await header.getByRole("link", { name: "Nsangusa home" }).click();
-      await expect(page).toHaveURL(/\/$/);
+      await expect(page).toHaveURL(/\/en$/);
       await expectSession();
       await page.goBack();
       await expect(page).toHaveURL(/\/profile$/);
       await expectSession();
       await page.goForward();
-      await expect(page).toHaveURL(/\/$/);
+      await expect(page).toHaveURL(/\/en$/);
       await expectSession();
       await page.reload();
       await expectSession();

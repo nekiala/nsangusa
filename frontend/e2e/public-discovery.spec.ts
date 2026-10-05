@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./english";
 
 test("latest pagination keeps page size, canonical metadata and disjoint results", async ({ page }) => {
   await page.goto("/latest?size=2");

@@ -54,9 +54,11 @@ class EventPayloadContractTests {
     definitions.setAccessible(true);
     assertEquals(catalog, ((Map<?, ?>) definitions.get(null)).keySet());
     Set<String> examples = new HashSet<>();
-    for (JsonNode fixture : ContractSchemas.fixture("events.json").required("events")) {
-      assertTrue(examples.add(fixture.required("type").asText()), "Duplicate event fixture");
-      assertTrue(documents.containsKey(fixture.required("schema").asText()));
+    for (JsonNode corpus : ContractSchemas.eventCorpora()) {
+      for (JsonNode fixture : corpus.required("events")) {
+        assertTrue(examples.add(fixture.required("type").asText()), "Duplicate event fixture");
+        assertTrue(documents.containsKey(fixture.required("schema").asText()));
+      }
     }
     assertEquals(catalog, examples);
     Set<String> schemaTypes = new HashSet<>();
@@ -72,10 +74,11 @@ class EventPayloadContractTests {
 
   @TestFactory
   Stream<DynamicTest> frozenProducerExamplesAndCurrentJacksonRoundTrips() throws Exception {
-    var corpus = ContractSchemas.fixture("events.json");
     var schemas = ContractSchemas.eventDocuments();
     List<DynamicTest> tests = new ArrayList<>();
-    for (JsonNode fixture : corpus.required("events")) {
+    for (var frozen : frozenFixtures()) {
+      JsonNode corpus = frozen.corpus();
+      JsonNode fixture = frozen.fixture();
       String type = fixture.required("type").asText();
       JsonSchema schema = ContractSchemas.event(schemas, fixture.required("schema").asText());
       ObjectNode envelope = envelope(corpus, fixture);
@@ -101,10 +104,11 @@ class EventPayloadContractTests {
 
   @TestFactory
   Stream<DynamicTest> allCatalogTypesRejectMalformedEnvelopesAndPayloads() throws Exception {
-    var corpus = ContractSchemas.fixture("events.json");
     var schemas = ContractSchemas.eventDocuments();
     List<DynamicTest> tests = new ArrayList<>();
-    for (JsonNode fixture : corpus.required("events")) {
+    for (var frozen : frozenFixtures()) {
+      JsonNode corpus = frozen.corpus();
+      JsonNode fixture = frozen.fixture();
       String type = fixture.required("type").asText();
       JsonSchema schema = ContractSchemas.event(schemas, fixture.required("schema").asText());
       ObjectNode original = envelope(corpus, fixture);
@@ -251,6 +255,18 @@ class EventPayloadContractTests {
     valid(ContractSchemas.event(documents, filename), unknown);
     assertThrows(
         RuntimeException.class, () -> READER.read(unknown.toString(), ArticleImageApproved.class));
+  }
+
+  private record FrozenFixture(JsonNode corpus, JsonNode fixture) {}
+
+  private static List<FrozenFixture> frozenFixtures() throws Exception {
+    List<FrozenFixture> fixtures = new ArrayList<>();
+    for (JsonNode corpus : ContractSchemas.eventCorpora()) {
+      corpus
+          .required("events")
+          .forEach(fixture -> fixtures.add(new FrozenFixture(corpus, fixture)));
+    }
+    return fixtures;
   }
 
   static ObjectNode envelope(JsonNode corpus, JsonNode fixture) {

@@ -70,6 +70,7 @@ spec:
             limits: {cpu: "1", memory: 1Gi}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: data, mountPath: /var/lib/postgresql}

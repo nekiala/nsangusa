@@ -16,11 +16,14 @@ import org.springframework.stereotype.Repository;
 class JdbcSearchDocumentStore implements SearchDocumentStore {
   private static final String RESULT_COLUMNS =
       """
-      select d.article_id, d.slug, d.headline, d.summary, d.topic, d.tags,
-             d.published_at, d.updated_at, %s as rank
+      select d.article_id, d.slug, coalesce(t.headline, d.headline) as headline,
+             coalesce(t.summary, d.summary) as summary, d.topic, d.tags,
+             d.published_at, d.updated_at, %s as rank,
+             (a.hero_object_key is not null) as has_image
       from article_search_documents d
       join articles a on a.id = d.article_id and a.state = 'PUBLISHED'
         and a.published_at is not null
+      left join article_translations t on t.article_id = d.article_id and t.language = :language
       %s
       order by %s
       limit :limit offset :offset
@@ -34,16 +37,32 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
         and a.published_at is not null
       """;
 
+  private static final String LOCALIZED_DOCUMENTS =
+      VISIBLE_DOCUMENTS
+          + """
+          left join article_translations t on t.article_id = d.article_id and t.language = :language
+          """;
+
+  // The index covers each article's own language; a translation is matched on its stored text.
+  private static final String MATCHES =
+      """
+      where (search_vector @@ websearch_to_tsquery('english', :query)
+        or (t.article_id is not null
+          and to_tsvector('simple', t.headline || ' ' || t.summary || ' ' || t.body)
+            @@ websearch_to_tsquery('simple', :query)))
+      """;
+
   JdbcSearchDocumentStore(JdbcClient jdbc) {
     this.jdbc = jdbc;
   }
 
   @Override
-  public SearchPage search(String query, int page, int size) {
-    String predicate = "where search_vector @@ websearch_to_tsquery('english', :query)";
+  public SearchPage search(String query, int page, int size, String language) {
+    String predicate = MATCHES;
     long total =
-        jdbc.sql("select count(*) " + VISIBLE_DOCUMENTS + predicate)
+        jdbc.sql("select count(*) " + LOCALIZED_DOCUMENTS + predicate)
             .param("query", query)
+            .param("language", language, java.sql.Types.VARCHAR)
             .query(Long.class)
             .single();
     String sql =
@@ -54,6 +73,7 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
     List<SearchResult> items =
         jdbc.sql(sql)
             .param("query", query)
+            .param("language", language, java.sql.Types.VARCHAR)
             .param("limit", size)
             .param("offset", page * size)
             .query(this::result)
@@ -62,13 +82,13 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
   }
 
   @Override
-  public SearchPage byTopic(String topic, int page, int size) {
-    return facetPage("d.topic = :value", topic, page, size);
+  public SearchPage byTopic(String topic, int page, int size, String language) {
+    return facetPage("d.topic = :value", topic, page, size, language);
   }
 
   @Override
-  public SearchPage byTag(String tag, int page, int size) {
-    return facetPage(":value = any(string_to_array(d.tags, ','))", tag, page, size);
+  public SearchPage byTag(String tag, int page, int size, String language) {
+    return facetPage(":value = any(string_to_array(d.tags, ','))", tag, page, size, language);
   }
 
   @Override
@@ -144,10 +164,12 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
         .update();
   }
 
-  private SearchPage facetPage(String predicate, String value, int page, int size) {
+  private SearchPage facetPage(
+      String predicate, String value, int page, int size, String language) {
     long total =
-        jdbc.sql("select count(*) " + VISIBLE_DOCUMENTS + "where " + predicate)
+        jdbc.sql("select count(*) " + LOCALIZED_DOCUMENTS + "where " + predicate)
             .param("value", value)
+            .param("language", language, java.sql.Types.VARCHAR)
             .query(Long.class)
             .single();
     String sql =
@@ -156,6 +178,7 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
     List<SearchResult> items =
         jdbc.sql(sql)
             .param("value", value)
+            .param("language", language, java.sql.Types.VARCHAR)
             .param("limit", size)
             .param("offset", page * size)
             .query(this::result)
@@ -174,7 +197,8 @@ class JdbcSearchDocumentStore implements SearchDocumentStore {
         tags == null || tags.isBlank() ? List.of() : Arrays.asList(tags.split(",")),
         rs.getTimestamp("published_at").toInstant(),
         rs.getTimestamp("updated_at").toInstant(),
-        rs.getDouble("rank"));
+        rs.getDouble("rank"),
+        rs.getBoolean("has_image"));
   }
 
   private static String normalize(String value) {

@@ -3,10 +3,12 @@ package com.nsangusa.news.identity.internal;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -50,6 +52,17 @@ class SecurityConfigurationTests {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.headerName").isNotEmpty())
         .andExpect(jsonPath("$.token").isNotEmpty());
+  }
+
+  @Test
+  void unauthenticatedAndFailedBasicRequestsAreNotChallengedForBrowserCredentials()
+      throws Exception {
+    mvc.perform(get("/api/v1/auth/me"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(header().doesNotExist("WWW-Authenticate"));
+    mvc.perform(get("/api/v1/auth/me").with(httpBasic("reader@example.test", "wrong-password")))
+        .andExpect(status().isUnauthorized())
+        .andExpect(header().doesNotExist("WWW-Authenticate"));
   }
 
   @Test

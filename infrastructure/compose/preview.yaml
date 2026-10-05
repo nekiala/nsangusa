@@ -46,6 +46,11 @@ services:
       PUBLIC_BASE_URL: http://localhost:3000
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
       LOCAL_SEED: "true"
+      X_LIVE_ENABLED: ${X_LIVE_ENABLED:-false}
+      X_BEARER_TOKEN: ${X_BEARER_TOKEN:-}
+      IMAGE_LIVE_ENABLED: ${IMAGE_LIVE_ENABLED:-false}
+      IMAGE_API_KEY: ${IMAGE_API_KEY:-}
+      IMAGE_MODEL: ${IMAGE_MODEL:-gpt-image-1}
       AI_LIVE_ENABLED: ${AI_LIVE_ENABLED:-false}
       AI_CREDENTIAL_MASTER_KEY: ${AI_CREDENTIAL_MASTER_KEY:-}
       AI_MODEL: ${AI_MODEL:-gpt-5-mini}

@@ -59,7 +59,7 @@ describe("public publication freshness", () => {
     vi.spyOn(contentApi, "related").mockResolvedValue([]);
     const props = { params: Promise.resolve({ slug: article.slug }) };
     const metadata = await generateMetadata(props);
-    expect(metadata.alternates).toEqual({ canonical: `/articles/${article.slug}` });
+    expect(metadata.alternates).toMatchObject({ canonical: `/articles/${article.slug}` });
     expect(metadata.openGraph).toMatchObject({ type: "article", publishedTime: "2026-09-01T12:00:00Z", modifiedTime: "2026-09-02T12:00:00Z" });
     const { container } = render(await ArticlePage(props));
     expect(within(screen.getByRole("navigation", { name: "Tags" })).getAllByRole("link")).toHaveLength(article.tags.length);
@@ -84,8 +84,8 @@ describe("public publication freshness", () => {
     expect((await GET()).headers.get("cache-control")).toContain("no-store");
     const headers = await config.headers!();
     expect(headers).toEqual(expect.arrayContaining([
-      expect.objectContaining({ source: "/articles/:path*", headers: expect.arrayContaining([expect.objectContaining({ key: "Cache-Control", value: expect.stringContaining("no-store") })]) }),
-      expect.objectContaining({ source: "/:path(robots.txt|rss.xml|sitemap.xml)", headers: expect.arrayContaining([expect.objectContaining({ key: "Cache-Control", value: expect.stringContaining("no-store") })]) })
+      expect.objectContaining({ source: "/:locale(en)?/articles/:path*", headers: expect.arrayContaining([expect.objectContaining({ key: "Cache-Control", value: expect.stringContaining("no-store") })]) }),
+      expect.objectContaining({ source: "/:locale(en)?/:path(robots.txt|rss.xml|sitemap.xml)", headers: expect.arrayContaining([expect.objectContaining({ key: "Cache-Control", value: expect.stringContaining("no-store") })]) })
     ]));
   });
 });

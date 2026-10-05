@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLocale } from "@/components/locale";
 import { useCallback, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -9,6 +9,7 @@ import { dateLabel, Feedback, useAction, useResource } from "@/components/admin/
 
 function ProfileEditor({ profile, saved }: { profile: AccountProfile; saved: () => void }) {
   const action = useAction();
+  const { t } = useLocale();
   const newsletter = profile.newsletter;
   const subscribed = newsletter && ["pending", "confirmed"].includes(newsletter.status);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -18,23 +19,23 @@ function ProfileEditor({ profile, saved }: { profile: AccountProfile; saved: () 
       displayName: String(data.get("displayName")),
       ...(subscribed ? { newsletterFrequency: String(data.get("frequency")) as AccountFrequency } : {}),
       expectedVersion: profile.version
-    }), "Profile saved.");
+    }), t("account.saved"));
     if (updated) saved();
   }
   return <form onSubmit={submit}>
-    <h2>Profile and preferences</h2>
-    <p>{profile.email} · {profile.emailVerified ? "Email verified" : "Verification required"}</p>
-    <p>Roles: {profile.roles.join(", ")}</p>
-    <label htmlFor="account-name">Display name</label>
+    <h2>{t("account.profileTitle")}</h2>
+    <p>{profile.email} · {t(profile.emailVerified ? "account.verified" : "account.unverified")}</p>
+    <p>{t("account.roles", { roles: profile.roles.join(", ") })}</p>
+    <label htmlFor="account-name">{t("account.displayName")}</label>
     <input id="account-name" name="displayName" required maxLength={100} defaultValue={profile.displayName} autoComplete="name" />
     {subscribed ? <>
-      <label htmlFor="account-frequency">Newsletter frequency</label>
+      <label htmlFor="account-frequency">{t("account.frequency")}</label>
       <select id="account-frequency" name="frequency" defaultValue={["instant", "all"].includes(newsletter.frequency) ? "immediate" : newsletter.frequency}>
-        <option value="immediate">Every published article</option><option value="daily">Daily digest</option><option value="weekly">Weekly digest</option>
+        <option value="immediate">{t("subscribe.immediate")}</option><option value="daily">{t("subscribe.daily")}</option><option value="weekly">{t("subscribe.weekly")}</option>
       </select>
-      <p>Subscription: {newsletter.status}. Changing frequency does not grant consent or confirm a subscription.</p>
-    </> : <p>Newsletter: {newsletter?.status || "Not subscribed"}. <Link href="/newsletter">Manage newsletter subscription</Link></p>}
-    <button disabled={action.busy}>Save profile</button>
+      <p>{t("account.subscription", { status: newsletter.status })}</p>
+    </> : <p>{t("account.newsletter", { status: newsletter?.status || t("account.notSubscribed") })} <Link href="/newsletter">{t("account.manageNewsletter")}</Link></p>}
+    <button disabled={action.busy}>{t("account.save")}</button>
     <Feedback error={action.error} status={action.status} />
   </form>;
 }
@@ -47,8 +48,9 @@ export function AccountSettings() {
   const [finished, setFinished] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const [saved, setSaved] = useState("");
+  const { t, path } = useLocale();
   function signedOut(destination = "/sign-in") {
-    setFinished(true); router.replace(destination); router.refresh();
+    setFinished(true); router.replace(path(destination)); router.refresh();
   }
   async function download() {
     await action.run(async () => {
@@ -57,47 +59,47 @@ export function AccountSettings() {
       const link = document.createElement("a");
       link.href = url; link.download = "account-data.json"; document.body.append(link); link.click(); link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    }, "Your account data download is ready.");
+    }, t("account.exportReady"));
   }
   async function remove(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (account.data && await action.run(() => identityApi.deleteAccount(confirmation, account.data!.version), "Account deleted.")) signedOut("/sign-in?deleted=1");
+    if (account.data && await action.run(() => identityApi.deleteAccount(confirmation, account.data!.version), t("account.deleted"))) signedOut("/sign-in?deleted=1");
   }
-  if (finished) return <section className="empty shell"><p role="status">You are signed out.</p><Link href="/sign-in">Sign in</Link></section>;
+  if (finished) return <section className="empty shell"><p role="status">{t("access.signedOut")}</p><Link href="/sign-in">{t("session.signIn")}</Link></section>;
   return <section className="shell account-settings" aria-labelledby="account-title">
-    <p className="eyebrow">Your account</p><h1 id="account-title">Profile and account settings</h1>
-    <button onClick={() => { account.refresh(); sessions.refresh(); }}>Refresh account</button>
+    <p className="eyebrow">{t("account.eyebrow")}</p><h1 id="account-title">{t("account.title")}</h1>
+    <button onClick={() => { account.refresh(); sessions.refresh(); }}>{t("account.refresh")}</button>
     <Feedback error={account.error} status={saved} />
-    {account.loading ? <p role="status">Loading your account…</p> : !account.error && account.data && <>
-      <ProfileEditor key={`${account.data.id}:${account.data.version}`} profile={account.data} saved={() => { setSaved("Profile saved."); account.refresh(); }} />
+    {account.loading ? <p role="status">{t("account.loading")}</p> : !account.error && account.data && <>
+      <ProfileEditor key={`${account.data.id}:${account.data.version}`} profile={account.data} saved={() => { setSaved(t("account.saved")); account.refresh(); }} />
       <section aria-labelledby="account-export-title">
-        <h2 id="account-export-title">Export account data</h2>
-        <p>Download your profile, newsletter preference and linked sign-in identities as JSON. This is an account export, not an export of published content or retained operational records.</p>
-        <button disabled={action.busy} onClick={download}>Download account data</button>
+        <h2 id="account-export-title">{t("account.exportTitle")}</h2>
+        <p>{t("account.exportBody")}</p>
+        <button disabled={action.busy} onClick={download}>{t("account.exportButton")}</button>
       </section>
       <section aria-labelledby="account-delete-title">
-        <h2 id="account-delete-title">Delete account</h2>
-        <p>Deletion disables sign-in, anonymizes your profile, disconnects external identities, signs out sessions and unsubscribes your newsletter. Published contributions and required audit or consent records may be retained. This cannot be undone.</p>
+        <h2 id="account-delete-title">{t("account.deleteTitle")}</h2>
+        <p>{t("account.deleteBody")}</p>
         <form onSubmit={remove}>
-          <label htmlFor="delete-confirmation">Type DELETE to confirm account deletion</label>
+          <label htmlFor="delete-confirmation">{t("account.deleteLabel")}</label>
           <input id="delete-confirmation" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} maxLength={6} autoComplete="off" required />
-          <button disabled={action.busy || confirmation !== "DELETE"}>Permanently delete account</button>
+          <button disabled={action.busy || confirmation !== "DELETE"}>{t("account.deleteButton")}</button>
         </form>
       </section>
     </>}
     <section aria-labelledby="account-sessions-title">
-      <h2 id="account-sessions-title">Active sessions</h2>
+      <h2 id="account-sessions-title">{t("account.sessionsTitle")}</h2>
       <Feedback error={sessions.error} />
-      {sessions.loading ? <p role="status">Loading sessions…</p> : !sessions.error && sessions.data?.length === 0 ? <p>No active sessions were found.</p> : !sessions.error && sessions.data?.map((session, index) => <article key={session.id}>
-        <h3>{session.current ? "This session" : `Other session ${index + 1}`}</h3>
-        <p>Created {dateLabel(session.createdAt)} · Last active {dateLabel(session.lastAccessedAt)} · Expires {dateLabel(session.expiresAt)}</p>
+      {sessions.loading ? <p role="status">{t("account.sessionsLoading")}</p> : !sessions.error && sessions.data?.length === 0 ? <p>{t("account.sessionsNone")}</p> : !sessions.error && sessions.data?.map((session, index) => <article key={session.id}>
+        <h3>{session.current ? t("account.thisSession") : t("account.otherSession", { number: index + 1 })}</h3>
+        <p>{t("account.sessionDates", { created: dateLabel(session.createdAt), active: dateLabel(session.lastAccessedAt), expires: dateLabel(session.expiresAt) })}</p>
         <button disabled={action.busy} onClick={async () => {
-          if (await action.run(() => identityApi.revokeSession(session.id), "Session revoked.")) {
+          if (await action.run(() => identityApi.revokeSession(session.id), t("account.sessionRevoked"))) {
             if (session.current) signedOut(); else sessions.refresh();
           }
-        }}>{session.current ? "Sign out this session" : "Revoke session"}</button>
+        }}>{t(session.current ? "account.signOutSession" : "account.revokeSession")}</button>
       </article>)}
-      <button disabled={action.busy} onClick={async () => { if (await action.run(() => api.auth.logout(), "Signed out.")) signedOut(); }}>Sign out</button>
+      <button disabled={action.busy} onClick={async () => { if (await action.run(() => api.auth.logout(), t("account.signedOut"))) signedOut(); }}>{t("session.signOut")}</button>
     </section>
     <Feedback error={action.error} status={action.status} />
   </section>;

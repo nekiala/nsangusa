@@ -41,10 +41,12 @@ class XAccountController {
       SourceIngestionService service,
       XSourceProvider provider,
       @org.springframework.beans.factory.annotation.Value("${news.providers.mode:disabled}")
-          String providerMode) {
+          String providerMode,
+      @org.springframework.beans.factory.annotation.Value("${news.x.live-enabled:false}")
+          boolean liveEnabled) {
     this.service = service;
     this.provider = provider;
-    this.simulationEnabled = "fake".equals(providerMode);
+    this.simulationEnabled = "fake".equals(providerMode) && !liveEnabled;
   }
 
   @GetMapping("/capabilities")

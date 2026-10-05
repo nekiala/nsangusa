@@ -22,6 +22,23 @@ class PromptBoundaryTests {
   }
 
   @Test
+  void aPostIsAlwaysAClaimAndNeverConfirmationWhoeverPublishedIt() {
+    assertThat(PromptBoundary.SYSTEM_RULES)
+        .contains("always a")
+        .contains("never independent confirmation")
+        .contains("governments, officials, institutions, and political figures")
+        .contains("X reporting is")
+        .contains("classification means verified");
+  }
+
+  @Test
+  void verificationStatusBelongsInEditorNotesNotPublishedText() {
+    assertThat(PromptBoundary.SYSTEM_RULES)
+        .contains("Published fields")
+        .contains("are editor notes and appear only in");
+  }
+
+  @Test
   void rejectsPrivateProviderEndpoints() {
     assertThatThrownBy(
             () ->

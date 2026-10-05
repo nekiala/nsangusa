@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { english, expect } from "../english";
 import type { NewsletterPreference } from "../../lib/newsletter-api";
 import {
   administrator, clickMutation, deleteTestAccount, findOnPages, frontend, get, mailLink,
@@ -38,7 +38,7 @@ test("subscriber manages consent-bound preferences and administrator discovers c
       await page.goto(link.href);
       await expect(page.getByLabel("Email frequency", { exact: true })).toHaveValue("weekly");
       expect(observed.requests.filter((request) => request.method() === "POST")).toHaveLength(0);
-      await expect(page).toHaveURL(new URL("/newsletter/preferences", frontend).href);
+      await expect(page).toHaveURL(new URL(english("/newsletter/preferences"), frontend).href);
       await page.getByLabel("Email frequency", { exact: true }).selectOption("daily");
       const saved = await clickMutation(page, page.getByRole("button", { name: "Save newsletter preferences", exact: true }),
         "POST", "/api/v1/newsletter/preferences");

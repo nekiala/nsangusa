@@ -1,9 +1,10 @@
-import { api, type ApiArticle, type Page, type SearchResult } from "@/lib/api";
+import { api, type ApiArticle, type ContentLanguage, type Page, type SearchResult } from "@/lib/api";
 
-export type ArticleSummary = Pick<ApiArticle, "id" | "slug" | "headline" | "summary" | "topic" | "tags" | "updatedAt"> & { publishedAt: string };
+export type ArticleSummary = Pick<ApiArticle, "id" | "slug" | "headline" | "summary" | "topic" | "tags" | "updatedAt"> & { publishedAt: string; hasImage?: boolean };
 export type PublicSearchResult = SearchResult & { updatedAt: string };
 export type Facet = { value: string; articleCount: number };
 const normalized = (value: string) => value.trim().toLowerCase();
+const languageQuery = (lang?: ContentLanguage) => lang ? `&lang=${lang}` : "";
 
 export function createPublicApi(client = api) {
   async function fakePublished() {
@@ -29,13 +30,13 @@ export function createPublicApi(client = api) {
     return [...counts].map(([value, articleCount]) => ({ value, articleCount }))
       .sort((a, b) => b.articleCount - a.articleCount || a.value.localeCompare(b.value));
   }
-  async function results(kind: "search" | "topics" | "tags", value: string, page: number, size: number): Promise<Page<PublicSearchResult>> {
+  async function results(kind: "search" | "topics" | "tags", value: string, page: number, size: number, lang?: ContentLanguage): Promise<Page<PublicSearchResult>> {
     bounds(page, size, 10_000);
     const term = normalized(value);
     if (!term || term.length > (kind === "search" ? 200 : 100)) throw new RangeError("Invalid search or facet");
     if (client.mode !== "fake") {
       const path = kind === "search" ? `/api/v1/search?q=${encodeURIComponent(value.trim())}&` : `/api/v1/${kind}/${encodeURIComponent(term)}?`;
-      return client.request(`${path}page=${page}&size=${size}`, { cache: "no-store" });
+      return client.request(`${path}page=${page}&size=${size}${languageQuery(lang)}`, { cache: "no-store" });
     }
     const articles = (await fakePublished()).filter((article) => kind === "topics" ? normalized(article.topic) === term
       : kind === "tags" ? article.tags.some((tag) => normalized(tag) === term)
@@ -43,14 +44,14 @@ export function createPublicApi(client = api) {
     return paginate(articles.map((article) => ({ ...summary(article), articleId: article.id, rank: kind === "search" ? 1 : 0 })), page, size);
   }
   return {
-    async published(page = 0, size = 20): Promise<Page<ArticleSummary>> {
+    async published(page = 0, size = 20, lang?: ContentLanguage): Promise<Page<ArticleSummary>> {
       bounds(page, size);
-      if (client.mode !== "fake") return client.request(`/api/v1/articles/discovery?page=${page}&size=${size}`, { cache: "no-store" });
+      if (client.mode !== "fake") return client.request(`/api/v1/articles/discovery?page=${page}&size=${size}${languageQuery(lang)}`, { cache: "no-store" });
       return paginate((await fakePublished()).map(summary), page, size);
     },
-    async related(slug: string, limit = 3): Promise<ArticleSummary[]> {
+    async related(slug: string, limit = 3, lang?: ContentLanguage): Promise<ArticleSummary[]> {
       if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new RangeError("Invalid related limit");
-      if (client.mode !== "fake") return client.request(`/api/v1/articles/${encodeURIComponent(slug)}/related?limit=${limit}`, { cache: "no-store" });
+      if (client.mode !== "fake") return client.request(`/api/v1/articles/${encodeURIComponent(slug)}/related?limit=${limit}${languageQuery(lang)}`, { cache: "no-store" });
       const current = await client.articles.bySlug(slug);
       if (current.state !== "PUBLISHED") return [];
       const tags = new Set(current.tags.map(normalized));
@@ -62,9 +63,9 @@ export function createPublicApi(client = api) {
     },
     topics: () => facetInventory("topics"),
     tags: () => facetInventory("tags"),
-    search: (query: string, page = 0, size = 20) => results("search", query, page, size),
-    byTopic: (topic: string, page = 0, size = 20) => results("topics", topic, page, size),
-    byTag: (tag: string, page = 0, size = 20) => results("tags", tag, page, size)
+    search: (query: string, page = 0, size = 20, lang?: ContentLanguage) => results("search", query, page, size, lang),
+    byTopic: (topic: string, page = 0, size = 20, lang?: ContentLanguage) => results("topics", topic, page, size, lang),
+    byTag: (tag: string, page = 0, size = 20, lang?: ContentLanguage) => results("tags", tag, page, size, lang)
   };
 }
 

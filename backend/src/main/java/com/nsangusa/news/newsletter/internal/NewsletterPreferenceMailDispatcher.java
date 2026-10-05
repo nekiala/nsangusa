@@ -22,6 +22,14 @@ class NewsletterPreferenceMailDispatcher {
     this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
   }
 
+  private NewsletterSubscriptionRepository subscriptions;
+
+  /** Supplies each subscriber's language; without it emails are English. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  void setSubscriptions(NewsletterSubscriptionRepository subscriptions) {
+    this.subscriptions = subscriptions;
+  }
+
   @Scheduled(fixedDelayString = "${news.newsletter.preference-mail-delay:10000}")
   void dispatch() {
     for (var id : queue.pending()) {
@@ -31,30 +39,32 @@ class NewsletterPreferenceMailDispatcher {
       String token =
           tokens.preferenceTokenFor(
               message.id(), message.subscriptionId(), message.expiresAt(), message.verifiedAt());
+      var wording =
+          NewsletterText.in(
+              subscriptions == null
+                  ? null
+                  : subscriptions
+                      .findById(message.subscriptionId())
+                      .map(subscription -> subscription.language)
+                      .orElse(null));
       String link =
-          publicBaseUrl
-              + "/newsletter/preferences?id="
-              + message.subscriptionId()
-              + "&token="
-              + token;
+          wording.url(
+              publicBaseUrl,
+              "/newsletter/preferences?id=" + message.subscriptionId() + "&token=" + token);
+      String note = wording.preferencesNote().formatted(message.expiresAt());
       try {
         email.send(
             "newsletter-preferences/" + message.id(),
             message.email(),
-            "Manage your newsletter preferences",
-            "Manage your newsletter preferences:\n"
-                + link
-                + "\n\nThis private link expires at "
-                + message.expiresAt()
-                + " (30 minutes after the request). "
-                + "Opening it makes no changes. If you did not request it, ignore this email.",
+            wording.preferencesSubject(),
+            wording.preferencesSubject() + ":\n" + link + "\n\n" + note,
             "<p><a href=\""
                 + org.owasp.encoder.Encode.forHtmlAttribute(link)
-                + "\">Manage newsletter preferences</a></p>"
-                + "<p>This private link expires at "
-                + message.expiresAt()
-                + " (30 minutes after the request). Opening it makes no changes. "
-                + "If you did not request it, ignore this email.</p>");
+                + "\">"
+                + org.owasp.encoder.Encode.forHtml(wording.preferencesAction())
+                + "</a></p><p>"
+                + org.owasp.encoder.Encode.forHtml(note)
+                + "</p>");
         queue.complete(id, true);
       } catch (RuntimeException failure) {
         // SMTP may have accepted the message before an error. Never blindly resend the claim.

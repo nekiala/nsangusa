@@ -5,11 +5,26 @@ import java.util.List;
 import java.util.UUID;
 
 public interface SearchService {
-  SearchPage search(String query, int page, int size);
+  /** Results carrying {@code language}'s headline and summary where a translation exists. */
+  SearchPage search(String query, int page, int size, String language);
 
-  SearchPage byTopic(String topic, int page, int size);
+  default SearchPage search(String query, int page, int size) {
+    return search(query, page, size, null);
+  }
 
-  SearchPage byTag(String tag, int page, int size);
+  /** Results carrying {@code language}'s headline and summary where a translation exists. */
+  SearchPage byTopic(String topic, int page, int size, String language);
+
+  default SearchPage byTopic(String topic, int page, int size) {
+    return byTopic(topic, page, size, null);
+  }
+
+  /** Results carrying {@code language}'s headline and summary where a translation exists. */
+  SearchPage byTag(String tag, int page, int size, String language);
+
+  default SearchPage byTag(String tag, int page, int size) {
+    return byTag(tag, page, size, null);
+  }
 
   List<Facet> topics();
 
@@ -30,7 +45,8 @@ public interface SearchService {
       List<String> tags,
       Instant publishedAt,
       Instant updatedAt,
-      double rank) {}
+      double rank,
+      boolean hasImage) {}
 
   record Facet(String value, long articleCount) {}
 }

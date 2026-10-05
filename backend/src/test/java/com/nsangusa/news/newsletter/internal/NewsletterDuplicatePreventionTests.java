@@ -3,6 +3,7 @@ package com.nsangusa.news.newsletter.internal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -278,7 +279,8 @@ class NewsletterDuplicatePreventionTests {
             processed,
             events,
             subscriptions,
-            new NewsletterDeliveryReservationService(deliveries),
+            new NewsletterDeliveryReservationService(
+                deliveries, Duration.ofHours(24), Duration.ofMinutes(10), true, events),
             campaigns,
             suppressions,
             mail,
@@ -292,6 +294,34 @@ class NewsletterDuplicatePreventionTests {
 
     assertThat(mail.acceptedMessages).isEqualTo(1);
     verify(processed).markProcessed(event.eventId(), "newsletter-delivery-v1");
+    // The lost response is recorded as a failure, the confirmed resend as a delivery.
+    var delivery = deliveryStore.values().iterator().next();
+    var failed =
+        org.mockito.ArgumentCaptor.forClass(
+            com.nsangusa.news.integration.NewsEvents.NewsletterDeliveryFailed.class);
+    verify(events)
+        .enqueue(
+            eq("NewsletterDeliveryFailed"),
+            eq(delivery.id),
+            eq(event.correlationId()),
+            eq(event.eventId()),
+            org.mockito.ArgumentMatchers.startsWith("newsletter-delivery-failed:" + delivery.id),
+            failed.capture());
+    assertThat(failed.getValue().failureCode()).isEqualTo("provider_error");
+    assertThat(failed.getValue().reconciliationRequired()).isFalse();
+    var delivered =
+        org.mockito.ArgumentCaptor.forClass(
+            com.nsangusa.news.integration.NewsEvents.NewsletterDelivered.class);
+    verify(events)
+        .enqueue(
+            eq("NewsletterDelivered"),
+            eq(delivery.id),
+            eq(event.correlationId()),
+            eq(event.eventId()),
+            eq("newsletter-delivered:" + delivery.id),
+            delivered.capture());
+    assertThat(delivered.getValue().campaignKey()).isEqualTo(event.payload().campaignKey());
+    assertThat(delivered.getValue().toString()).doesNotContain("reader@example.com");
   }
 
   private static Fixture fixture() {
@@ -309,7 +339,8 @@ class NewsletterDuplicatePreventionTests {
             processed,
             events,
             subscriptions,
-            new NewsletterDeliveryReservationService(deliveries),
+            new NewsletterDeliveryReservationService(
+                deliveries, Duration.ofHours(24), Duration.ofMinutes(10), true, events),
             campaigns,
             suppressions,
             mail,
