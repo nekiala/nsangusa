@@ -4,7 +4,6 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { LocaleProvider } from "@/components/locale";
 import { requestLocale } from "@/lib/i18n/server";
-import { contentApi } from "@/lib/content";
 import { publicBaseUrl } from "@/lib/public-base-url";
 // Self-hosted, OFL-1.1 licensed variable fonts: no third-party font requests at runtime.
 import "@fontsource-variable/inter";
@@ -29,7 +28,5 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   const { locale, t } = await requestLocale();
-  // Navigation must not take the page down with the content service.
-  const topicLinks = await contentApi.topics().then((topics) => topics.slice(0, 10).map((topic) => topic.value), () => []);
-  return <html lang={locale}><body><LocaleProvider locale={locale}><a className="skip-link" href="#main-content">{t("site.skip")}</a><SiteHeader topicLinks={topicLinks} /><main id="main-content" tabIndex={-1}>{children}</main><SiteFooter /></LocaleProvider></body></html>;
+  return <html lang={locale}><body><LocaleProvider locale={locale}><a className="skip-link" href="#main-content">{t("site.skip")}</a><SiteHeader /><main id="main-content" tabIndex={-1}>{children}</main><SiteFooter /></LocaleProvider></body></html>;
 }

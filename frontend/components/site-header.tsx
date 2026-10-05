@@ -3,15 +3,25 @@
 import Link, { useLocale } from "./locale";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { facetPath, facetTitle, topics } from "@/lib/content";
+import { useEffect, useState } from "react";
+import { facetPath, facetTitle } from "@/lib/content";
+import { publicApi } from "@/lib/public-api";
 import { defaultLocale, localePrefix, localizePath, splitLocale } from "@/lib/i18n";
 import { tx } from "@/lib/i18n/staff";
 import { staffWorkspaceLinks } from "@/lib/staff-navigation";
 import { useSession } from "./use-session";
 import { useAction } from "./admin/shared";
 
-/** `topicLinks` are the publication's live topics; without them the fixed sections are shown. */
-export function SiteHeader({ topicLinks }: { topicLinks?: string[] }) {
+export function SiteHeader() {
+  // Loaded in the browser: fetching in the layout would stream every page, and scripts that
+  // arrive with streamed content are added without the page's CSP nonce.
+  const [topicLinks, setTopicLinks] = useState<string[]>([]);
+  useEffect(() => {
+    let current = true;
+    publicApi.topics().then((topics) => { if (current) setTopicLinks(topics.slice(0, 10).map((topic) => topic.value)); },
+      () => { /* Navigation stays usable without the topic shortcuts. */ });
+    return () => { current = false; };
+  }, []);
   const { status, user, refresh } = useSession();
   const router = useRouter();
   const pathname = usePathname();
@@ -55,8 +65,6 @@ export function SiteHeader({ topicLinks }: { topicLinks?: string[] }) {
       <span>{t("nav.workspaces")}</span>
       {workspaces.map(({ label, href }) => <Link key={href} href={href} prefetch={false} aria-current={pathname === path(href) ? "page" : undefined}>{tx(label)}</Link>)}
     </nav>}
-    <nav className="topic-bar shell" aria-label={t("nav.topics")}>{topicLinks?.length
-      ? topicLinks.map((topic) => <Link key={topic} href={facetPath("topics", topic)}>{facetTitle(topic)}</Link>)
-      : topics.map((topic) => <Link key={topic} href={`/topics/${topic.toLowerCase()}`}>{t(`topic.${topic}`)}</Link>)}</nav>
+    <nav className="topic-bar shell" aria-label={t("nav.topics")}>{topicLinks.map((topic) => <Link key={topic} href={facetPath("topics", topic)}>{facetTitle(topic)}</Link>)}</nav>
   </header>;
 }

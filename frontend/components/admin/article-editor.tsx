@@ -1,7 +1,7 @@
 "use client";
 
 import { tx } from "@/lib/i18n/staff";
-import Link from "@/components/locale";
+import Link, { useLocale } from "@/components/locale";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 import { api, type ApiArticle, type ArticleCommand, type ArticleSource, type ArticleState, type ArticleTranslation, type ContentLanguage } from "@/lib/api";
@@ -154,6 +154,7 @@ export function ArticleEditor({ id }: { id: string }) {
   const router = useRouter();
   const [createdId, setCreatedId] = useState<string | null>(null);
   const action = useAction();
+  const { path } = useLocale();
   if (id !== "new" || createdId) return <ArticleDetail id={createdId || id} />;
   return <AdminSection title={tx("Article editor")} description={tx("Create a manual article from real ingested sources using safe editorial blocks.")}>
     <Link href="/admin/editor">{tx("Back to article queue")}</Link>
@@ -161,7 +162,7 @@ export function ArticleEditor({ id }: { id: string }) {
     <ArticleForm busy={action.busy} onSave={(command) => action.run(async () => {
       const created = await api.admin.createArticle(command);
       setCreatedId(created.id);
-      router.replace(`/admin/editor/${created.id}`);
+      router.replace(path(`/admin/editor/${created.id}`));
     }, tx("Article created."))} />
   </AdminSection>;
 }

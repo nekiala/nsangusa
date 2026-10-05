@@ -147,3 +147,5 @@
 /* Keep the topic link and the headline below it at least 24px apart as touch targets. */
 .kicker{margin-bottom:.4rem}
 .kicker a{padding-block:5px}
+/* The topic shortcuts load after the page; reserve their row so the header does not jump. */
+.topic-bar{min-height:2.45rem}
