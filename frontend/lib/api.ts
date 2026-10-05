@@ -442,7 +442,9 @@ function canonicalPayload(value: unknown): unknown {
   }
   return value;
 }
-async function fakeRequest<T>(path: string, init: WebRequestInit): Promise<T> {
+async function fakeRequest<T>(requested: string, init: WebRequestInit): Promise<T> {
+  // Demonstration articles exist in one language, so the reader's language preference is dropped.
+  const path = requested.replace(/([?&])lang=(?:fr|en)(&|$)/, (_match, lead: string, tail: string) => tail ? lead : "");
   const key = new Headers(init.headers).get("Idempotency-Key");
   if (!key) return structuredClone(await routeFakeRequest<T>(path, init));
   const identity = `${fakeUser?.id || "demo"}:${key}`;

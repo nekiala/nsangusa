@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
+import nextConfig from "./next.config";
 import { proxy } from "./proxy";
 
 describe("the HTML nonce proxy", () => {
@@ -21,18 +22,22 @@ describe("the HTML nonce proxy", () => {
     expect(proxy(request).headers.get("Content-Security-Policy")).not.toBe(policy);
   });
 
-  it("rewrites /en pages to the shared routes and gives French a single address", () => {
+  it("records the locale of the requested address without rewriting or redirecting it", () => {
     const english = proxy(new NextRequest("http://127.0.0.1:3000/en/latest?page=2"));
-    expect(new URL(english.headers.get("x-middleware-rewrite")!).pathname + new URL(english.headers.get("x-middleware-rewrite")!).search).toBe("/latest?page=2");
     expect(english.headers.get("x-middleware-request-x-locale")).toBe("en");
+    expect(english.headers.get("x-middleware-rewrite")).toBeNull();
     expect(english.headers.get("Content-Security-Policy")).toBeTruthy();
 
     const french = proxy(new NextRequest("http://127.0.0.1:3000/latest", { headers: { "x-locale": "en" } }));
-    expect(french.headers.get("x-middleware-rewrite")).toBeNull();
     expect(french.headers.get("x-middleware-request-x-locale")).toBe("fr");
+    expect(french.status).toBe(200);
+  });
 
-    const redirect = proxy(new NextRequest("http://127.0.0.1:3000/fr/latest"));
-    expect(redirect.status).toBe(308);
-    expect(new URL(redirect.headers.get("location")!).pathname).toBe("/latest");
+  it("maps /en onto the shared routes and gives French a single address in the framework configuration", async () => {
+    const rewrites = await nextConfig.rewrites!();
+    expect(rewrites).toMatchObject({ beforeFiles: [{ source: "/en", destination: "/" }, { source: "/en/:path*", destination: "/:path*" }] });
+    expect(await nextConfig.redirects!()).toEqual([
+      { source: "/fr", destination: "/", permanent: true }, { source: "/fr/:path*", destination: "/:path*", permanent: true }
+    ]);
   });
 });

@@ -113,7 +113,8 @@
 
 /* Staff workspace */
 .admin-layout{background:var(--panel);padding:1.5rem 0 4rem}
-.admin-shell{grid-template-columns:220px minmax(0,1fr);gap:1.5rem}
+.admin-shell{gap:1.5rem}
+@media(min-width:701px){.admin-shell{grid-template-columns:220px minmax(0,1fr)}}
 .admin-nav{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:.5rem;gap:.1rem;position:sticky;top:1rem}
 .admin-nav a{padding:.5rem .65rem;border-radius:4px;font-size:.86rem}
 .admin-nav a:hover{background:var(--panel)}
@@ -140,3 +141,9 @@
 .review-panel{border-top:1px solid var(--line)}
 .notice{border-left-color:var(--brand);border-radius:0 4px 4px 0}
 @media(max-width:700px){.admin-nav{position:static}}
+
+/* The footer keeps its light buttons on the dark band. */
+.site-footer .email-form button{background:var(--paper);color:var(--ink);border-color:var(--paper)}
+/* Keep the topic link and the headline below it at least 24px apart as touch targets. */
+.kicker{margin-bottom:.4rem}
+.kicker a{padding-block:5px}

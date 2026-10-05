@@ -84,8 +84,8 @@ describe("public publication freshness", () => {
     expect((await GET()).headers.get("cache-control")).toContain("no-store");
     const headers = await config.headers!();
     expect(headers).toEqual(expect.arrayContaining([
-      expect.objectContaining({ source: "/articles/:path*", headers: expect.arrayContaining([expect.objectContaining({ key: "Cache-Control", value: expect.stringContaining("no-store") })]) }),
-      expect.objectContaining({ source: "/:path(robots.txt|rss.xml|sitemap.xml)", headers: expect.arrayContaining([expect.objectContaining({ key: "Cache-Control", value: expect.stringContaining("no-store") })]) })
+      expect.objectContaining({ source: "/:locale(en)?/articles/:path*", headers: expect.arrayContaining([expect.objectContaining({ key: "Cache-Control", value: expect.stringContaining("no-store") })]) }),
+      expect.objectContaining({ source: "/:locale(en)?/:path(robots.txt|rss.xml|sitemap.xml)", headers: expect.arrayContaining([expect.objectContaining({ key: "Cache-Control", value: expect.stringContaining("no-store") })]) })
     ]));
   });
 });

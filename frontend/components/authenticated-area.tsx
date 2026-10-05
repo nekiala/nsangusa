@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, type ReactNode } from "react";
 import Link, { useLocale } from "@/components/locale";
 import { usePathname, useRouter } from "next/navigation";
 import { type UserProfile } from "@/lib/api";
+import { splitLocale } from "@/lib/i18n";
 import { useSession } from "./use-session";
 
 const UserContext = createContext<UserProfile | null>(null);
@@ -18,7 +19,8 @@ export function AuthenticatedArea({ children, staff = false, allowedRoles }: { c
 
   useEffect(() => {
     // Explicit sign-out/revocation/deletion actions own their completion destination.
-    if (status === "anonymous") replace(path(`/sign-in?next=${encodeURIComponent(pathname)}`));
+    // The return path is stored without its language; sign-in adds the current one back.
+    if (status === "anonymous") replace(path(`/sign-in?next=${encodeURIComponent(splitLocale(pathname).pathname)}`));
   }, [status, pathname, replace, path]);
 
   if (status === "error") return <section className="empty shell" role="alert"><p className="eyebrow">{t("access.unavailableEyebrow")}</p><h1>{t("access.unverified")}</h1><p>{t("access.tryLater")}</p></section>;
