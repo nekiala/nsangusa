@@ -15,8 +15,8 @@ type Props = { params: Promise<{ page: string }>; searchParams: Promise<{ next?:
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const page = (await params).page;
-  const legalTitle = ["privacy", "terms", "editorial", "corrections"].includes(page) ? publicationPolicies().pages[page].title : undefined;
-  const { prefix, t } = await requestLocale();
+  const { locale, prefix, t } = await requestLocale();
+  const legalTitle = ["privacy", "terms", "editorial", "corrections"].includes(page) ? publicationPolicies(process.env, locale).pages[page].title : undefined;
   const authTitle = Object.hasOwn(authTitles, page) ? t(authTitles[page as keyof typeof authTitles]) : undefined;
   const title = legalTitle || authTitle || (page === "profile" ? t("meta.profile") : page === "verify-email" ? t("verify.title") : page);
   return { title, alternates: alternates(prefix, `/${page}`), robots: page === "profile" || page === "verify-email" || page in authPages ? { index: false, follow: false } : undefined };
@@ -28,9 +28,9 @@ export default async function UtilityPage({ params, searchParams }: Props) {
   if (page === "password-reset" && query.token !== undefined) return <div className="auth-wrap shell"><PasswordResetCompletion token={query.token} /></div>;
   if (page in authPages) return <div className="auth-wrap shell"><AuthForm kind={authPages[page as keyof typeof authPages]} nextPath={(await searchParams).next} /></div>;
   if (page === "profile") return <AuthenticatedArea><AccountSettings /></AuthenticatedArea>;
-  const policies = publicationPolicies();
+  const { locale, t } = await requestLocale();
+  const policies = publicationPolicies(process.env, locale);
   const legal = Object.hasOwn(policies.pages, page) ? policies.pages[page] : undefined;
-  const { t } = await requestLocale();
   if (legal) return <article className="legal shell"><p className="eyebrow">{policies.publisher}</p><h1>{legal.title}</h1>
     {!policies.approved && <p className="notice">{t("policy.draft")}</p>}
     <p>{t("policy.version", { version: policies.version })}{policies.effectiveDate && <> · {t("policy.effective")} <time dateTime={policies.effectiveDate}>{policies.effectiveDate}</time></>}</p>
