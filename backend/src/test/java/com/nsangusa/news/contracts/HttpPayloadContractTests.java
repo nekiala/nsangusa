@@ -215,7 +215,7 @@ class HttpPayloadContractTests {
         article.set("content", fixture.required("content"));
       }
       var view = ContractSchemas.JSON.treeToValue(article, ArticleService.ArticleView.class);
-      when(articles.getPublishedBySlug("synthetic-headline")).thenReturn(view);
+      when(articles.getPublishedBySlug("synthetic-headline", null)).thenReturn(view);
       JsonNode json =
           response(
               get("/api/v1/articles/synthetic-headline"), "/api/v1/articles/{slug}", "get", 200);
@@ -286,7 +286,7 @@ class HttpPayloadContractTests {
                 404,
                 new org.springframework.web.server.ResponseStatusException(
                     org.springframework.http.HttpStatus.NOT_FOUND, "Article not found")))) {
-      when(articles.getPublishedBySlug("missing")).thenThrow(sample.getValue());
+      when(articles.getPublishedBySlug("missing", null)).thenThrow(sample.getValue());
       problem(get("/api/v1/articles/missing"), template, "get", sample.getKey());
       reset(articles);
     }

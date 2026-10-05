@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.nsangusa.news.articles.ArticleState;
+import com.nsangusa.news.integration.ArticleTranslation;
 import com.nsangusa.news.integration.NewsEvents.ArticleDraftGenerated;
 import com.nsangusa.news.integration.NewsEvents.Claim;
 import com.nsangusa.news.integration.NewsEvents.SourceReference;
@@ -183,6 +184,48 @@ class ArticleStateTransitionTests {
     assertThatThrownBy(() -> article.approve(editorId))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("image");
+  }
+
+  @Test
+  void bilingualDraftKeepsItsLanguageAndTranslationAndRejectsATranslationIntoItsOwnLanguage() {
+    var english =
+        new ArticleTranslation(
+            "en",
+            "English headline",
+            "English summary",
+            "English body",
+            null,
+            "Title",
+            "Desc",
+            "Alt");
+    var article =
+        Article.fromDraft(UUID.randomUUID(), draft(true).withLanguages("fr", List.of(english)));
+
+    assertThat(article.language).isEqualTo("fr");
+    assertThat(article.translations)
+        .singleElement()
+        .satisfies(
+            translation -> {
+              assertThat(translation.language).isEqualTo("en");
+              assertThat(translation.headline).isEqualTo("English headline");
+              assertThat(translation.body).isEqualTo("English body");
+            });
+
+    var french =
+        new ArticleTranslation("fr", "Titre", "Résumé", "Corps", null, "Titre", "Desc", "Alt");
+    assertThatThrownBy(
+            () ->
+                Article.fromDraft(
+                    UUID.randomUUID(), draft(true).withLanguages("fr", List.of(french))))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void draftsWithoutADeclaredLanguageRemainEnglishWithNoTranslations() {
+    var article = Article.fromDraft(UUID.randomUUID(), draft(true));
+
+    assertThat(article.language).isEqualTo("en");
+    assertThat(article.translations).isEmpty();
   }
 
   private ArticleDraftGenerated draft(boolean humanReview) {

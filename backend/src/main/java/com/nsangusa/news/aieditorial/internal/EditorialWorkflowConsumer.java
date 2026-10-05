@@ -308,31 +308,32 @@ class EditorialWorkflowConsumer {
             .distinct()
             .toList();
     return new ArticleDraftGenerated(
-        draft.storyCandidateId(),
-        draft.headline(),
-        draft.summary(),
-        draft.body(),
-        draft.editorialContext(),
-        draft.seoTitle(),
-        draft.seoDescription(),
-        draft.slugSuggestion(),
-        draft.tags(),
-        draft.topic(),
-        draft.sources(),
-        draft.claims(),
-        draft.confidence(),
-        warnings,
-        draft.safetyFlags(),
-        true,
-        draft.imagePrompt(),
-        draft.imageAltText(),
-        draft.socialPreviewText(),
-        draft.provider(),
-        draft.model(),
-        draft.promptVersion(),
-        draft.inputTokens(),
-        draft.outputTokens(),
-        draft.generatedAt());
+            draft.storyCandidateId(),
+            draft.headline(),
+            draft.summary(),
+            draft.body(),
+            draft.editorialContext(),
+            draft.seoTitle(),
+            draft.seoDescription(),
+            draft.slugSuggestion(),
+            draft.tags(),
+            draft.topic(),
+            draft.sources(),
+            draft.claims(),
+            draft.confidence(),
+            warnings,
+            draft.safetyFlags(),
+            true,
+            draft.imagePrompt(),
+            draft.imageAltText(),
+            draft.socialPreviewText(),
+            draft.provider(),
+            draft.model(),
+            draft.promptVersion(),
+            draft.inputTokens(),
+            draft.outputTokens(),
+            draft.generatedAt())
+        .withLanguages(draft.language(), draft.translations());
   }
 
   private static String generatedContent(ArticleDraftGenerated draft) {
@@ -352,9 +353,30 @@ class EditorialWorkflowConsumer {
                 draft.imagePrompt(),
                 draft.imageAltText(),
                 draft.socialPreviewText()),
-            draft.claims().stream().map(claim -> claim.text()))
+            java.util.stream.Stream.concat(
+                draft.claims().stream().map(claim -> claim.text()), translatedText(draft).stream()))
         .filter(java.util.Objects::nonNull)
         .collect(java.util.stream.Collectors.joining("\n\n"));
+  }
+
+  /** Every translated field, so translations pass the same generated-content checks. */
+  static List<String> translatedText(ArticleDraftGenerated draft) {
+    if (draft.translations() == null) {
+      return List.of();
+    }
+    return draft.translations().stream()
+        .flatMap(
+            translation ->
+                java.util.stream.Stream.of(
+                    translation.headline(),
+                    translation.summary(),
+                    translation.body(),
+                    translation.editorialContext(),
+                    translation.seoTitle(),
+                    translation.seoDescription(),
+                    translation.imageAltText()))
+        .filter(java.util.Objects::nonNull)
+        .toList();
   }
 
   private static ArticleDraftGenerated mergeGeneratedSafety(
@@ -368,31 +390,32 @@ class EditorialWorkflowConsumer {
             .distinct()
             .toList();
     return new ArticleDraftGenerated(
-        draft.storyCandidateId(),
-        draft.headline(),
-        draft.summary(),
-        draft.body(),
-        draft.editorialContext(),
-        draft.seoTitle(),
-        draft.seoDescription(),
-        draft.slugSuggestion(),
-        draft.tags(),
-        draft.topic(),
-        draft.sources(),
-        draft.claims(),
-        draft.confidence(),
-        warnings,
-        flags,
-        true,
-        draft.imagePrompt(),
-        draft.imageAltText(),
-        draft.socialPreviewText(),
-        draft.provider(),
-        draft.model(),
-        draft.promptVersion(),
-        draft.inputTokens(),
-        draft.outputTokens(),
-        draft.generatedAt());
+            draft.storyCandidateId(),
+            draft.headline(),
+            draft.summary(),
+            draft.body(),
+            draft.editorialContext(),
+            draft.seoTitle(),
+            draft.seoDescription(),
+            draft.slugSuggestion(),
+            draft.tags(),
+            draft.topic(),
+            draft.sources(),
+            draft.claims(),
+            draft.confidence(),
+            warnings,
+            flags,
+            true,
+            draft.imagePrompt(),
+            draft.imageAltText(),
+            draft.socialPreviewText(),
+            draft.provider(),
+            draft.model(),
+            draft.promptVersion(),
+            draft.inputTokens(),
+            draft.outputTokens(),
+            draft.generatedAt())
+        .withLanguages(draft.language(), draft.translations());
   }
 
   private <T> T audited(

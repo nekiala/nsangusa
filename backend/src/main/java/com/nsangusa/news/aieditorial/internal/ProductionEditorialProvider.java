@@ -14,6 +14,7 @@ import com.nsangusa.news.aieditorial.EditorialProviders.DraftRequest;
 import com.nsangusa.news.aieditorial.EditorialProviders.EditorialAnalysisProvider;
 import com.nsangusa.news.aieditorial.EditorialProviders.ProviderConfiguration;
 import com.nsangusa.news.aieditorial.EditorialProviders.SafetyResult;
+import com.nsangusa.news.integration.ArticleTranslation;
 import com.nsangusa.news.integration.NewsEvents.ArticleDraftGenerated;
 import com.nsangusa.news.integration.NewsEvents.Claim;
 import java.math.BigDecimal;
@@ -35,6 +36,11 @@ import org.springframework.web.client.ResourceAccessException;
 
 class ProductionEditorialProvider
     implements EditorialAnalysisProvider, ArticleDraftProvider, ContentSafetyProvider {
+  /** Drafts are written in the publication's primary language and carry one translation. */
+  private static final String PRIMARY_LANGUAGE = "fr";
+
+  private static final String TRANSLATION_LANGUAGE = "en";
+
   private static final Set<String> MODELS = DeployedEditorialCatalog.OPENAI_MODELS;
   private final ObjectMapper mapper;
   private final URI endpoint;
@@ -197,33 +203,47 @@ class ProductionEditorialProvider
           .withUsage(response.model(), response.inputTokens(), response.outputTokens());
     }
     return new ArticleDraftGenerated(
-        request.storyCandidateId(),
-        draft.headline(),
-        draft.summary(),
-        draft.body(),
-        draft.editorialContext(),
-        draft.seoTitle(),
-        draft.seoDescription(),
-        draft.slugSuggestion(),
-        draft.tags(),
-        draft.topic(),
-        request.sources().stream()
-            .filter(source -> draft.sourceIds().contains(source.sourcePostId()))
-            .toList(),
-        draft.claims(),
-        draft.confidence(),
-        draft.uncertaintyNotes(),
-        draft.safetyFlags(),
-        true,
-        draft.imagePrompt(),
-        draft.imageAltText(),
-        draft.socialPreviewText(),
-        "openai",
-        response.model(),
-        configuration.promptVersion(),
-        response.inputTokens(),
-        response.outputTokens(),
-        Instant.now());
+            request.storyCandidateId(),
+            draft.headline(),
+            draft.summary(),
+            draft.body(),
+            draft.editorialContext(),
+            draft.seoTitle(),
+            draft.seoDescription(),
+            draft.slugSuggestion(),
+            draft.tags(),
+            draft.topic(),
+            request.sources().stream()
+                .filter(source -> draft.sourceIds().contains(source.sourcePostId()))
+                .toList(),
+            draft.claims(),
+            draft.confidence(),
+            draft.uncertaintyNotes(),
+            draft.safetyFlags(),
+            true,
+            draft.imagePrompt(),
+            draft.imageAltText(),
+            draft.socialPreviewText(),
+            "openai",
+            response.model(),
+            configuration.promptVersion(),
+            response.inputTokens(),
+            response.outputTokens(),
+            Instant.now())
+        .withLanguages(
+            PRIMARY_LANGUAGE,
+            draft.translation() == null
+                ? List.of()
+                : List.of(
+                    new ArticleTranslation(
+                        TRANSLATION_LANGUAGE,
+                        draft.translation().headline(),
+                        draft.translation().summary(),
+                        draft.translation().body(),
+                        draft.translation().editorialContext(),
+                        draft.translation().seoTitle(),
+                        draft.translation().seoDescription(),
+                        draft.translation().imageAltText())));
   }
 
   @Override
@@ -443,11 +463,23 @@ class ProductionEditorialProvider
           """
           Extract only claims supported by the supplied permitted material, attribute each to its
           supplied source identifiers, and flag conflicting or incomplete evidence.
+          Confidence measures how clearly the material supports the claims. An official statement
+          about the account holder's own affairs is strong support; a single source is not by
+          itself a reason for low confidence.
           """;
       case "draft" ->
           """
-          Preserve the supplied classified claims and all source identifiers. Write attributed,
-          cautious prose without adding factual claims. This is a draft, never a publication decision.
+          Preserve the supplied classified claims and all source identifiers. Write attributed
+          prose without adding factual claims. Report REPORTED claims in a direct news register,
+          attributed to the account holder by name, as a statement the institution itself made.
+          Hedge only UNVERIFIED and DISPUTED claims. Do not describe an official statement as an
+          unverified or unconfirmed social media post, and do not call for it to be verified
+          against the same institution. Warnings are notes for the editor: keep them in
+          uncertaintyNotes and safetyFlags, never in the headline, summary, or body.
+          Fill translation with a faithful English version of the headline, summary, body,
+          editorialContext, seoTitle, seoDescription and imageAltText: the same facts, attribution
+          and hedging, with nothing added or omitted. Every other field stays in French.
+          This is a draft, never a publication decision.
           """;
       default -> throw new IllegalArgumentException("Unsupported editorial operation");
     };
@@ -551,5 +583,15 @@ class ProductionEditorialProvider
       boolean humanReviewRequired,
       String imagePrompt,
       String imageAltText,
-      String socialPreviewText) {}
+      String socialPreviewText,
+      Translation translation) {}
+
+  private record Translation(
+      String headline,
+      String summary,
+      String body,
+      String editorialContext,
+      String seoTitle,
+      String seoDescription,
+      String imageAltText) {}
 }

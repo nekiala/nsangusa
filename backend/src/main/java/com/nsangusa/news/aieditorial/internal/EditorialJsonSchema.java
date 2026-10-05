@@ -37,7 +37,16 @@ final class EditorialJsonSchema {
         "humanReviewRequired", Map.of("type", "boolean"),
         "imagePrompt", text(4000),
         "imageAltText", text(500),
-        "socialPreviewText", text(1000));
+        "socialPreviewText", text(1000),
+        "translation",
+            object(
+                "headline", text(300),
+                "summary", text(2000),
+                "body", text(30_000),
+                "editorialContext", Map.of("type", List.of("string", "null"), "maxLength", 5000),
+                "seoTitle", text(300),
+                "seoDescription", text(500),
+                "imageAltText", text(500)));
   }
 
   static Map<String, Object> safety() {

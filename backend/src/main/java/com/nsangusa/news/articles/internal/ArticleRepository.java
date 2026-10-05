@@ -28,7 +28,8 @@ interface ArticleRepository extends JpaRepository<Article, UUID> {
       value =
           """
           select id, slug, headline, summary, topic, tags,
-                 published_at as publishedAt, updated_at as updatedAt
+                 published_at as publishedAt, updated_at as updatedAt,
+                 (hero_object_key is not null) as hasImage
           from articles where state = 'PUBLISHED' and published_at is not null
           order by published_at desc, id asc
           """,
@@ -42,7 +43,8 @@ interface ArticleRepository extends JpaRepository<Article, UUID> {
           """
           select candidate.id, candidate.slug, candidate.headline, candidate.summary,
                  candidate.topic, candidate.tags,
-                 candidate.published_at as publishedAt, candidate.updated_at as updatedAt
+                 candidate.published_at as publishedAt, candidate.updated_at as updatedAt,
+                 (candidate.hero_object_key is not null) as hasImage
           from articles candidate
           join articles current on current.slug = :slug
           cross join lateral (
@@ -63,6 +65,11 @@ interface ArticleRepository extends JpaRepository<Article, UUID> {
       nativeQuery = true)
   List<PublicEntry> findRelated(String slug, int limit);
 
+  @Query(
+      "select translation from ArticleTranslationEntity translation"
+          + " where translation.article.id in :articleIds and translation.language = :language")
+  List<ArticleTranslationEntity> findTranslations(List<UUID> articleIds, String language);
+
   interface PublicEntry {
     UUID getId();
 
@@ -75,6 +82,8 @@ interface ArticleRepository extends JpaRepository<Article, UUID> {
     String getTopic();
 
     String getTags();
+
+    Boolean getHasImage();
 
     java.time.Instant getPublishedAt();
 
