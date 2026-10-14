@@ -54,15 +54,15 @@ test("only the staging hostname and its certificate are configured", () => {
   for (const forbidden of ["includeSubDomains", "preload"]) assert.ok(!https.includes(forbidden), forbidden);
 });
 
-test("test environment is proxied only to loopback NodePorts behind basic auth", () => {
+test("staging environment is proxied only to loopback NodePorts behind basic auth", () => {
   const tlsConfig = read("https.conf");
   const httpsServer = tlsConfig.slice(tlsConfig.indexOf("listen 443 ssl;"));
   const targets = httpsServer.split("\n").filter((line) => line.trim().startsWith("proxy_pass "))
     .map((line) => line.trim().split(/\s+/)[1].replace(/;$/, ""));
   assert.deepEqual(targets.sort(), ["http://127.0.0.1:30380", "http://127.0.0.1:30381"]);
   assert.ok(!tlsConfig.slice(0, tlsConfig.indexOf("listen 443 ssl;")).includes("proxy_pass"));
-  assert.ok(httpsServer.includes('auth_basic "Nsangusa test environment";'));
-  assert.ok(httpsServer.includes("auth_basic_user_file /etc/nginx/nsangusa-test.htpasswd;"));
+  assert.ok(httpsServer.includes('auth_basic "Nsangusa staging environment";'));
+  assert.ok(httpsServer.includes("auth_basic_user_file /etc/nginx/nsangusa-staging.htpasswd;"));
   // The only unauthenticated location is the HTTPS challenge path, which serves nothing.
   let acme = httpsServer.slice(httpsServer.indexOf("location ^~ /.well-known/acme-challenge/"));
   acme = acme.slice(0, acme.indexOf("}"));
@@ -74,7 +74,7 @@ test("test environment is proxied only to loopback NodePorts behind basic auth",
   assert.ok(httpsServer.includes("proxy_set_header X-Forwarded-For $remote_addr;"));
   assert.ok(!httpsServer.includes("$proxy_add_x_forwarded_for"));
   assert.ok(httpsServer.includes("location ~ ^/(api|login|logout|oauth2)(/|$)"));
-  assert.ok(httpsServer.includes('return 503 "Nsangusa test environment is unavailable.\\n";'));
+  assert.ok(httpsServer.includes('return 503 "Nsangusa staging environment is unavailable.\\n";'));
 });
 
 test("renewal is scoped, bounded and does not force new certificates", () => {
