@@ -31,6 +31,9 @@ class PublicationConsumer {
   }
 
   @KafkaListener(topics = EventTopics.EDITORIAL, groupId = "publication-policy-v1")
+  @KafkaListener(
+      topics = EventTopics.EDITORIAL_RETRY,
+      groupId = "publication-policy-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void ready(String json) {
     if (!"ArticleReadyForReview".equals(reader.eventType(json))) {
@@ -49,6 +52,9 @@ class PublicationConsumer {
   }
 
   @KafkaListener(topics = EventTopics.PUBLICATION, groupId = "publication-v1")
+  @KafkaListener(
+      topics = EventTopics.PUBLICATION_RETRY,
+      groupId = "publication-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void consume(String json) {
     if (!"ArticleApproved".equals(reader.eventType(json))) {

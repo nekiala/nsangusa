@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect } from "../english";
 import type { AiConfiguration, AiProviderSetup } from "../../lib/ai-admin-api";
 import { administrator, get, mutate, signIn, test } from "./phase4-helpers";
 import { scanAccessibility } from "../accessibility-helpers";

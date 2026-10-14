@@ -356,6 +356,12 @@ class AiAdministrationIntegrationTests {
             "imageAltText",
             "socialPreviewText")) draft.put(name, "A reported development");
     draft.putNull("editorialContext");
+    var translation = draft.putObject("translation");
+    for (String name :
+        List.of("headline", "summary", "body", "seoTitle", "seoDescription", "imageAltText")) {
+      translation.put(name, "A reported development");
+    }
+    translation.putNull("editorialContext");
     draft.put("slugSuggestion", "reported-development");
     draft.put("topic", "world");
     draft.putArray("tags").add("news");

@@ -68,6 +68,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
       "management.tracing.enabled=false",
       "spring.cache.type=none",
       "news.outbox.poll-interval=3600000",
+      "news.events.retry.delays=1s,2s",
       "spring.kafka.consumer.properties.metadata.max.age.ms=500",
       "spring.kafka.consumer.properties.allow.auto.create.topics=false",
       "spring.kafka.producer.properties.max.block.ms=3000",
@@ -132,7 +133,7 @@ class EventReliabilityBrokerIntegrationTests {
   }
 
   @Test
-  void exhaustedFailuresHaveFourAttemptsDespiteChangingExceptionTypesAndPreserveMetadata()
+  void exhaustedFailuresHaveFourBlockingAndTwoDelayedAttemptsAndPreserveMetadata()
       throws Exception {
     var message = message();
     var plan = probe.plan(message.key(), 1000, Failure.TRANSIENT);
@@ -141,10 +142,11 @@ class EventReliabilityBrokerIntegrationTests {
     awaitCommitted(GROUP, sent);
     awaitCommitted(OBSERVER_GROUP, sent);
 
-    assertThat(plan.calls.get()).isEqualTo(4);
-    assertBackoff(plan, 1_000, 2_000, 4_000);
-    assertThat(plan.cleanTransactions).containsExactly(true, true, true, true);
-    assertThat(failure.deliveryAttempt()).isEqualTo(4);
+    assertThat(plan.calls.get()).isEqualTo(6);
+    assertBackoff(plan, 1_000, 2_000, 4_000, 1_000, 2_000);
+    assertThat(plan.cleanTransactions).containsExactly(true, true, true, true, true, true);
+    assertThat(failure.deliveryAttempt()).isEqualTo(6);
+    assertThat(failure.originalTopic()).isEqualTo(TOPIC);
     assertThat(failure.poisonMessage()).isFalse();
     assertThat(failure.status()).isEqualTo("eligible");
     assertThat(failure.originalPartition()).isEqualTo(1);
@@ -226,6 +228,59 @@ class EventReliabilityBrokerIntegrationTests {
   }
 
   @Test
+  void delayedRetryTopicRecoversOnlyTheFailedGroupWithoutBlockingLaterRecords() throws Exception {
+    var message = message();
+    var plan = probe.plan(message.key(), 4, Failure.TRANSIENT);
+    var sent = send(TOPIC, message);
+    awaitCommitted(GROUP, sent);
+    // The source partition advances once the record is on the retry topic, before recovery.
+    assertThat(inbox(message.eventId(), GROUP)).isZero();
+    var later = message();
+    probe.plan(later.key(), 0, Failure.TRANSIENT);
+    var laterSent = send(TOPIC, later);
+    awaitCommitted(GROUP, laterSent);
+    assertThat(inbox(later.eventId(), GROUP)).isEqualTo(1);
+
+    await(() -> inbox(message.eventId(), GROUP), count -> count == 1);
+    assertThat(plan.calls.get()).isEqualTo(5);
+    assertBackoff(plan, 1_000, 2_000, 4_000, 1_000);
+    assertThat(count("reliability_probe_effects", "event_id", message.eventId())).isEqualTo(1);
+    assertThat(count("outbox_events", "causation_id", message.eventId())).isEqualTo(1);
+    assertThat(failures(sent, GROUP)).isEmpty();
+
+    var retry =
+        brokerRecord(
+            TOPIC + EventTopics.RETRY_SUFFIX,
+            value -> value.contains(message.eventId().toString()));
+    assertThat(retry.partition()).isEqualTo(sent.partition());
+    assertThat(retry.key()).isEqualTo(message.key());
+    assertThat(text(retry, "x-retry-consumer-group")).isEqualTo(GROUP);
+    assertThat(text(retry, "kafka_dlt-original-topic")).isEqualTo(TOPIC);
+    var retryMetadata =
+        new RecordMetadata(
+            new TopicPartition(retry.topic(), retry.partition()), retry.offset(), 0, 0, 0, 0);
+    awaitCommitted(OBSERVER_GROUP + EventTopics.RETRY_GROUP_SUFFIX, retryMetadata);
+    // The observer group processed the original once and skipped the other group's retry.
+    assertThat(probe.observed(message.key())).isEqualTo(1);
+  }
+
+  @Test
+  void retryRecordsAddressedToAnotherGroupAreSkippedByEveryRetryListener() throws Exception {
+    var message = message();
+    var plan = probe.plan(message.key(), 0, Failure.TRANSIENT);
+    var record =
+        new ProducerRecord<Object, Object>(
+            TOPIC + EventTopics.RETRY_SUFFIX, 1, message.key(), message.json());
+    record.headers().add("x-retry-consumer-group", "unrelated-v1".getBytes(StandardCharsets.UTF_8));
+    var sent = kafka.send(record).get(10, TimeUnit.SECONDS).getRecordMetadata();
+    awaitCommitted(GROUP + EventTopics.RETRY_GROUP_SUFFIX, sent);
+    awaitCommitted(OBSERVER_GROUP + EventTopics.RETRY_GROUP_SUFFIX, sent);
+    assertThat(plan.calls.get()).isZero();
+    assertThat(probe.observed(message.key())).isZero();
+    assertThat(inbox(message.eventId(), GROUP)).isZero();
+  }
+
+  @Test
   void outboxRemainsUnpublishedWhenTheRealBrokerCannotAcknowledgeAndRecoversAfterProvisioning()
       throws Exception {
     UUID aggregate = UUID.randomUUID();
@@ -271,7 +326,7 @@ class EventReliabilityBrokerIntegrationTests {
     plan.failures = 0;
     UUID actor = UUID.randomUUID();
     var preview = preview(failure, actor);
-    assertThat(plan.calls.get()).isEqualTo(4);
+    assertThat(plan.calls.get()).isEqualTo(6);
     var request = operations.confirmReplay(preview.id(), actor);
     await(() -> operations.getReplay(request.id()), result -> "completed".equals(result.status()));
     await(() -> inbox(message.eventId(), GROUP), count -> count == 1);
@@ -283,7 +338,7 @@ class EventReliabilityBrokerIntegrationTests {
         new RecordMetadata(
             new TopicPartition(replay.topic(), replay.partition()), replay.offset(), 0, 0, 0, 0);
     awaitCommitted(OBSERVER_GROUP, replayMetadata);
-    assertThat(plan.calls.get()).isEqualTo(5);
+    assertThat(plan.calls.get()).isEqualTo(7);
     assertThat(probe.observed(message.key())).isEqualTo(1);
     assertThat(replay.partition()).isEqualTo(sent.partition());
     assertThat(
@@ -299,7 +354,7 @@ class EventReliabilityBrokerIntegrationTests {
     var duplicateMetadata = kafka.send(duplicate).get(10, TimeUnit.SECONDS).getRecordMetadata();
     awaitCommitted(GROUP, duplicateMetadata);
     awaitCommitted(OBSERVER_GROUP, duplicateMetadata);
-    assertThat(plan.calls.get()).isEqualTo(6);
+    assertThat(plan.calls.get()).isEqualTo(8);
     assertThat(probe.observed(message.key())).isEqualTo(1);
     assertThat(count("reliability_probe_effects", "event_id", message.eventId())).isEqualTo(1);
     assertThat(count("outbox_events", "causation_id", message.eventId())).isEqualTo(1);
@@ -327,7 +382,7 @@ class EventReliabilityBrokerIntegrationTests {
     assertThat(operations.listReplayRecords(request.id()))
         .singleElement()
         .satisfies(record -> assertThat(record.outcome()).isEqualTo("blocked"));
-    assertThat(plan.calls.get()).isEqualTo(4);
+    assertThat(plan.calls.get()).isEqualTo(6);
     assertThat(inbox(message.eventId(), GROUP)).isZero();
   }
 
@@ -571,6 +626,10 @@ class EventReliabilityBrokerIntegrationTests {
       }
       throw new AssertionError("Expected broker record not found in " + topic);
     }
+  }
+
+  private static String text(ConsumerRecord<String, String> record, String header) {
+    return new String(record.headers().lastHeader(header).value(), StandardCharsets.UTF_8);
   }
 
   private static <T> T await(Supplier<T> supplier, Predicate<T> predicate) throws Exception {

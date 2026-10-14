@@ -4,20 +4,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.nsangusa.news.media.ImageGenerationProvider;
 import java.net.URI;
 import java.util.Base64;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.convert.ApplicationConversionService;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -29,6 +34,42 @@ class ProductionImageGenerationProviderTests {
   private final RestClient.Builder builder =
       RestClient.builder().baseUrl("https://images.example.test");
   private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+
+  @Test
+  void liveGateSelectsTheLiveImageApiWithoutProductionProviderMode() {
+    var runner =
+        new ApplicationContextRunner()
+            .withInitializer(
+                context ->
+                    context
+                        .getBeanFactory()
+                        .setConversionService(ApplicationConversionService.getSharedInstance()))
+            .withBean(RestClient.Builder.class, RestClient::builder)
+            .withBean(JsonMapper.class, JsonMapper::new)
+            .withBean(ImageProviderCallExecutor.class, () -> mock(ImageProviderCallExecutor.class))
+            .withUserConfiguration(
+                FakeImageGenerationProvider.class, ProductionImageGenerationProvider.class)
+            .withPropertyValues(
+                "spring.profiles.active=local",
+                "news.providers.mode=fake",
+                "news.providers.image.base-url=https://api.openai.com");
+
+    runner.run(
+        context ->
+            assertThat(context.getBean(ImageGenerationProvider.class))
+                .isInstanceOf(FakeImageGenerationProvider.class));
+    runner
+        .withPropertyValues(
+            "news.providers.image.live-enabled=true", "news.providers.image.api-key=test-key")
+        .run(
+            context ->
+                assertThat(context.getBean(ImageGenerationProvider.class))
+                    .isInstanceOf(ProductionImageGenerationProvider.class));
+    runner
+        .withPropertyValues(
+            "news.providers.image.live-enabled=true", "news.providers.image.api-key=")
+        .run(context -> assertThat(context).hasFailed());
+  }
 
   @Test
   void gptImagesUseTheOfficialBase64ProtocolAndRecordProviderMetadata() {
@@ -54,8 +95,59 @@ class ProductionImageGenerationProviderTests {
     assertThat(image.provider()).isEqualTo("openai");
     assertThat(image.model()).isEqualTo("gpt-image-1");
     assertThat(image.renderedPrompt()).contains("non-photorealistic", "Community library opening");
-    assertThat(image.promptVersion()).isEqualTo("editorial-illustration-v1");
+    assertThat(image.promptVersion()).isEqualTo("editorial-illustration-v2");
     assertThat(image.providerRequestId()).isEqualTo("req-editorial-image");
+    server.verify();
+  }
+
+  @Test
+  void citedOfficeIsLookedUpAndItsHolderIsPortrayed() {
+    server
+        .expect(requestTo("https://images.example.test/v1/responses"))
+        .andExpect(method(HttpMethod.POST))
+        .andExpect(
+            content()
+                .json(
+                    """
+            {"model":"gpt-5-mini","store":false,"tools":[{"type":"web_search"}]}
+            """))
+        .andExpect(content().string(containsString("Democratic Republic of the Congo")))
+        .andExpect(content().string(containsString("gouverneur de la banque centrale")))
+        .andRespond(
+            withSuccess(
+                """
+            {"output":[{"type":"web_search_call"},{"type":"message","content":[{"type":"output_text",
+            "text":"{\\"subjects\\":[{\\"name\\":\\"Example Holder\\",\\"role\\":\\"Governor of the central bank\\",\\"appearance\\":\\"Man in his fifties,\\\\nglasses, dark suit ([example.test](https://example.test/a))\\"},{\\"name\\":\\"sources, source_citations\\",\\"role\\":\\"-\\",\\"appearance\\":\\"https://example.test\\"}]}"}]}]}
+            """,
+                MediaType.APPLICATION_JSON));
+    server
+        .expect(requestTo("https://images.example.test/v1/images/generations"))
+        .andExpect(content().string(containsString("Example Holder, Governor of the central bank")))
+        .andRespond(withSuccess(response(PNG), MediaType.APPLICATION_JSON));
+
+    var image =
+        provider("gpt-5-mini")
+            .generate("Le gouverneur de la banque centrale annonce une mesure", "Illustration");
+
+    assertThat(image.renderedPrompt())
+        .contains("recognisable likeness", "holds that office")
+        .endsWith(
+            "- Example Holder, Governor of the central bank: Man in his fifties, glasses, dark suit");
+    server.verify();
+  }
+
+  @Test
+  void failedSubjectLookupStillIllustratesTheBrief() {
+    server
+        .expect(requestTo("https://images.example.test/v1/responses"))
+        .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+    server
+        .expect(requestTo("https://images.example.test/v1/images/generations"))
+        .andRespond(withSuccess(response(PNG), MediaType.APPLICATION_JSON));
+
+    var image = provider("gpt-5-mini").generate("Félix Tshisekedi à Kolwezi", "Illustration");
+
+    assertThat(image.renderedPrompt()).endsWith("Félix Tshisekedi à Kolwezi");
     server.verify();
   }
 
@@ -148,6 +240,15 @@ class ProductionImageGenerationProviderTests {
     }
   }
 
+  @Test
+  void unresolvableEndpointIsARetryableNetworkFailure() {
+    assertThatThrownBy(
+            () ->
+                ProductionImageGenerationProvider.validatePublicHttpsEndpoint(
+                    URI.create("https://unresolvable.invalid")))
+        .isInstanceOf(ResourceAccessException.class);
+  }
+
   private ProductionImageGenerationProvider provider(int responseLimit, int imageLimit) {
     return new ProductionImageGenerationProvider(
         builder.build(),
@@ -156,6 +257,17 @@ class ProductionImageGenerationProviderTests {
         "gpt-image-1",
         responseLimit,
         imageLimit);
+  }
+
+  private ProductionImageGenerationProvider provider(String subjectModel) {
+    return new ProductionImageGenerationProvider(
+        builder.build(),
+        JsonMapper.builder().build(),
+        ImageProviderCallExecutorTests.executor(3, 5),
+        "gpt-image-1",
+        10_000,
+        1000,
+        subjectModel);
   }
 
   private static String response(byte[] bytes) {

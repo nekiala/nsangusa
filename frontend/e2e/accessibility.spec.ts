@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./english";
 import { publicKeyboardJourney, scanAccessibility } from "./accessibility-helpers";
 
 // Fast fake-mode regression coverage complements, but does not replace, the real-backend gate.

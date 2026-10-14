@@ -42,6 +42,9 @@ class ArticleEventConsumer {
   }
 
   @KafkaListener(topics = EventTopics.EDITORIAL, groupId = "article-draft-v1")
+  @KafkaListener(
+      topics = EventTopics.EDITORIAL_RETRY,
+      groupId = "article-draft-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void drafts(String json) {
     if (!"ArticleDraftGenerated".equals(reader.eventType(json))) {
@@ -67,6 +70,9 @@ class ArticleEventConsumer {
   }
 
   @KafkaListener(topics = EventTopics.EDITORIAL, groupId = "article-image-result-v1")
+  @KafkaListener(
+      topics = EventTopics.EDITORIAL_RETRY,
+      groupId = "article-image-result-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void images(String json) {
     if (!"ArticleImageGenerated".equals(reader.eventType(json))) {
@@ -89,6 +95,9 @@ class ArticleEventConsumer {
   }
 
   @KafkaListener(topics = EventTopics.EDITORIAL, groupId = "article-image-candidate-v2")
+  @KafkaListener(
+      topics = EventTopics.EDITORIAL_RETRY,
+      groupId = "article-image-candidate-v2" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void imageCandidates(String json) {
     if (!"ArticleImageCandidateGenerated".equals(reader.eventType(json))) {
@@ -107,6 +116,9 @@ class ArticleEventConsumer {
   }
 
   @KafkaListener(topics = EventTopics.EDITORIAL, groupId = "article-image-approval-v1")
+  @KafkaListener(
+      topics = EventTopics.EDITORIAL_RETRY,
+      groupId = "article-image-approval-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void approvedImages(String json) {
     if (!"ArticleImageApproved".equals(reader.eventType(json))) {

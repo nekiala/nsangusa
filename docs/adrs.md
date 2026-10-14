@@ -129,3 +129,94 @@ uncertain sends require evidence-backed terminal reconciliation, never a blind r
 
 **Consequences:** Workflow counts are not dependency health probes. SMTP acceptance alone cannot
 prove inbox delivery or justify a retry after an uncertain external send.
+
+## ADR-014: Group-scoped delayed retry topics
+
+**Decision (2026-10-01):** After the four blocking attempts, a transient failure is forwarded to
+`<topic>.retry` on its original partition, addressed to the failed consumer group, and retried
+after each configured delay (`news.events.retry.delays`, default 30 s and 120 s) before it is
+dead-lettered. Every listener has a `<group>-retry` twin that skips records addressed to other
+groups and holds a record until its not-before time. Terminal, contract and unscoped failures
+still go directly to `<topic>.dlt`. Spring's `@RetryableTopic` was not used: it shares one retry
+topic among every group consuming a topic and brings its own DLT naming, which conflicts with
+the shared `.dlt` topics and consumer-scoped replay.
+
+**Consequences:** A failing record no longer blocks its partition beyond the short blocking
+tier, and short dependency outages recover without operator replay. While a record waits, later
+records for the same aggregate can be processed first; consumers rely on inbox deduplication and
+supersession checks, as they already do for replay. Production must provision one `.retry` topic
+per main topic with the same partition count. Retry twins add one consumer group per listener.
+
+## ADR-015: No Kafka transactions; database outbox and inbox instead
+
+**Decision (2026-10-01):** The application does not use Kafka transactions. Consumers write their
+business state, inbox row and new outbox events in one PostgreSQL transaction, and the relay
+publishes acknowledged outbox records afterwards with an idempotent producer. Consumers read with
+`read_committed`.
+
+**Consequences:** Kafka transactions would only make Kafka→Kafka writes atomic; they could not
+include the PostgreSQL work or the external provider calls that carry the business effect. The
+only Kafka→Kafka writes, retry and DLT forwards, can duplicate after a crash, and the inbox makes
+those duplicates harmless. If a future consumer writes its output directly to Kafka, that path
+must adopt a transactional producer or an equivalent duplicate defense.
+
+## ADR-016: Operational tooling without an additional language runtime
+
+**Decision (2026-10-01):** Repository tooling uses Node.js `.mjs` scripts tested with `node --test`,
+matching the existing `.github/scripts`, and POSIX `sh` with OpenSSL for scripts installed on
+hosts. The former Python drills, guards and certificate verifier were ported; the specification
+forbids introducing Python. Java remains the only backend language.
+
+**Consequences:** CI needs no Python. The operational drill's encrypted backup is now a
+gzip-compressed JSON bundle with a per-member SHA-256 manifest instead of a ZIP archive. A host
+that already has the Python ACME verifier installed keeps running it until the shell verifier
+is reinstalled.
+
+## ADR-017: Publish the remaining workflow facts as events
+
+**Decision (2026-10-01):** The specification's remaining workflow events are published through the
+outbox where their state changes commit: `XAccountMonitoringRequested`, `StoryCandidateCreated`,
+`StoryAnalysisCompleted`, `ArticleScheduled`, `NewsletterDelivered`, `NewsletterDeliveryFailed`
+and `CommentModerated`. Only `XAccountMonitoringRequested` has an in-process consumer, which runs
+an account's first sync after an administrator adds or resumes it. Scheduled polling does not
+emit it, because outbox rows are retained and a per-poll request would grow the outbox and Kafka
+by roughly 1,440 records per account per day. New event types use a separately pinned baseline,
+`contracts/compatibility/v1-additions-2026-10-01`; the 2026-09-19 baseline is unchanged.
+
+**Consequences:** Downstream services and operators can observe every step of the workflow
+without querying module tables. Payloads exclude subscriber addresses, provider message IDs and
+free-text moderation reasons. Events without a consumer never drive publication or delivery;
+the database remains authoritative.
+
+## ADR-018: Illustrate the public figures a story is about
+
+**Decision (2026-10-14):** Editorial illustrations portray the public figures a story is about
+instead of avoiding people. The drafting prompt asks for an image brief that names the person
+the claims name, or the office and institution when the claims cite only a role, without
+guessing the holder. Before each image, the live adapter asks a text model
+(`IMAGE_SUBJECT_LOOKUP_MODEL`, default `gpt-5-mini`) with web search to identify at most four
+public figures named or designated by office, reading them as Congolese unless the brief says
+otherwise, and to describe their visible appearance. The lookup's structured result is
+sanitised (no links or citations, a name-shaped pattern, bounded length) and appended to the
+rendered prompt as portrait notes, so the stored prompt (`editorial-illustration-v2`) records
+exactly what the image model received. The lookup is best effort: any failure illustrates the
+brief alone. `IMAGE_SUBJECT_LOOKUP_ENABLED=false` turns it off.
+
+**Limits:** Likenesses are dignified, neutral illustrated portraits, never photographic, and
+never show a person doing something the brief only alleges. Private individuals, real logos,
+fabricated screenshots and text remain prohibited. The brief and portrait notes are untrusted
+subject matter, not instructions. Every generated image still requires explicit editor approval
+and keeps its AI provenance disclosure.
+
+**Why:** A Congolese political and economic news front about named officials is unclear and
+reads as evasive with generic or faceless imagery. Without a lookup, an image model guesses who
+holds an office or draws a generic figure. Illustration, not photorealism, keeps the image from
+being mistaken for evidence of an event.
+
+**Consequences:** This supersedes the earlier blanket avoidance of identifiable people (M01): the
+prohibition now covers private individuals and depictions that imply unproven conduct. Each image
+costs one extra text-model call with web search, and the brief is sent to the provider's search
+tool, which the provider approval must cover (D02). The lookup can misidentify an office holder;
+editors must check the likeness against the article before approving. Editorial and legal
+acceptance of likeness and personality-rights risk in the publication's jurisdictions remains an
+open gate (D05), not something this decision closes.

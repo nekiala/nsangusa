@@ -16,7 +16,7 @@ describe("frontend metadata", () => {
   it("normalizes topic titles and canonical URLs", async () => {
     const metadata = await topicMetadata({ params: Promise.resolve({ topic: "technology" }) });
     expect(metadata.title).toBe("Technology");
-    expect(metadata.alternates).toEqual({ canonical: "/topics/technology" });
+    expect(metadata.alternates).toMatchObject({ canonical: "/topics/technology", languages: { fr: "/topics/technology", en: "/en/topics/technology" } });
   });
 
   it("keeps every administrative route out of robots", () => {
@@ -25,10 +25,10 @@ describe("frontend metadata", () => {
     ]));
   });
 
-  it("uses the runtime publication origin for inherited metadata and robots, not the compiled fallback", () => {
+  it("uses the runtime publication origin for inherited metadata and robots, not the compiled fallback", async () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "http://build-time.invalid");
     vi.stubEnv("PUBLIC_BASE_URL", "https://publication.example.test");
-    expect(rootMetadata().metadataBase).toEqual(new URL("https://publication.example.test/"));
+    expect((await rootMetadata()).metadataBase).toEqual(new URL("https://publication.example.test/"));
     expect(robots().sitemap).toBe("https://publication.example.test/sitemap.xml");
   });
 });

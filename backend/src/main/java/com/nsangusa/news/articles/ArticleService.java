@@ -12,13 +12,27 @@ public interface ArticleService {
 
   ArticleView getLocked(UUID articleId);
 
+  /**
+   * The published article with its reader-facing text in {@code language} where a version exists.
+   */
+  ArticleView getPublishedBySlug(String slug, String language);
+
+  /** The published article in its own language. */
   ArticleView getPublishedBySlug(String slug);
 
   List<ArticleView> latestPublished(int limit);
 
-  PublicArticlePage published(int page, int size);
+  PublicArticlePage published(int page, int size, String language);
 
-  List<ArticleSummary> related(String slug, int limit);
+  default PublicArticlePage published(int page, int size) {
+    return published(page, size, null);
+  }
+
+  List<ArticleSummary> related(String slug, int limit, String language);
+
+  default List<ArticleSummary> related(String slug, int limit) {
+    return related(slug, limit, null);
+  }
 
   ArticlePage list(ArticleState state, int page, int size);
 
@@ -58,7 +72,37 @@ public interface ArticleService {
       Set<String> tags,
       List<SourceView> sources,
       boolean commentsEnabled,
-      ArticleContent content) {
+      ArticleContent content,
+      List<TranslationView> translations) {
+    public ManualArticleCommand(
+        String headline,
+        String summary,
+        String body,
+        String editorialContext,
+        String seoTitle,
+        String seoDescription,
+        String slugSuggestion,
+        String topic,
+        Set<String> tags,
+        List<SourceView> sources,
+        boolean commentsEnabled,
+        ArticleContent content) {
+      this(
+          headline,
+          summary,
+          body,
+          editorialContext,
+          seoTitle,
+          seoDescription,
+          slugSuggestion,
+          topic,
+          tags,
+          sources,
+          commentsEnabled,
+          content,
+          null);
+    }
+
     public ManualArticleCommand(
         String headline,
         String summary,
@@ -116,8 +160,79 @@ public interface ArticleService {
       String correctionNote,
       UUID approvedBy,
       Instant approvedAt,
-      ArticleContent content)
+      ArticleContent content,
+      String language,
+      List<TranslationView> translations)
       implements java.io.Serializable {
+    public ArticleView {
+      language = language == null ? "en" : language;
+      translations = translations == null ? List.of() : List.copyOf(translations);
+    }
+
+    public ArticleView(
+        UUID id,
+        String slug,
+        String headline,
+        String summary,
+        String body,
+        String editorialContext,
+        String topic,
+        Set<String> tags,
+        ArticleState state,
+        String heroObjectKey,
+        String imageAltText,
+        boolean generatedImage,
+        boolean commentsEnabled,
+        Instant publishedAt,
+        Instant updatedAt,
+        long version,
+        List<SourceView> sources,
+        List<String> warnings,
+        double confidence,
+        UUID storyCandidateId,
+        String seoTitle,
+        String seoDescription,
+        UUID approvedImageGenerationId,
+        UUID pendingImageGenerationId,
+        boolean imageApprovalRequired,
+        String correctionNote,
+        UUID approvedBy,
+        Instant approvedAt,
+        ArticleContent content) {
+      this(
+          id,
+          slug,
+          headline,
+          summary,
+          body,
+          editorialContext,
+          topic,
+          tags,
+          state,
+          heroObjectKey,
+          imageAltText,
+          generatedImage,
+          commentsEnabled,
+          publishedAt,
+          updatedAt,
+          version,
+          sources,
+          warnings,
+          confidence,
+          storyCandidateId,
+          seoTitle,
+          seoDescription,
+          approvedImageGenerationId,
+          pendingImageGenerationId,
+          imageApprovalRequired,
+          correctionNote,
+          approvedBy,
+          approvedAt,
+          content,
+          "en",
+          List.of());
+    }
+
     public ArticleView(
         UUID id,
         String slug,
@@ -285,6 +400,18 @@ public interface ArticleService {
     }
   }
 
+  /** One language's reader-facing text for an article. */
+  record TranslationView(
+      String language,
+      String headline,
+      String summary,
+      String body,
+      String editorialContext,
+      String seoTitle,
+      String seoDescription,
+      String imageAltText)
+      implements java.io.Serializable {}
+
   record ArticlePage(List<ArticleView> items, int page, int size, long total) {}
 
   record ArticleSummary(
@@ -295,7 +422,8 @@ public interface ArticleService {
       String topic,
       List<String> tags,
       Instant publishedAt,
-      Instant updatedAt) {}
+      Instant updatedAt,
+      boolean hasImage) {}
 
   record PublicArticlePage(List<ArticleSummary> items, int page, int size, long total) {}
 

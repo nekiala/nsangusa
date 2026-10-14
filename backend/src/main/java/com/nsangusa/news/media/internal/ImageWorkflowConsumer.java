@@ -45,6 +45,9 @@ class ImageWorkflowConsumer {
   }
 
   @KafkaListener(topics = EventTopics.EDITORIAL, groupId = "image-generation-v1")
+  @KafkaListener(
+      topics = EventTopics.EDITORIAL_RETRY,
+      groupId = "image-generation-v1" + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void consume(String json) {
     if (!"ArticleImageRequested".equals(reader.eventType(json))) {

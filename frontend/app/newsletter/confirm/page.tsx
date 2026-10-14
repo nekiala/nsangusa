@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
+import { requestLocale } from "@/lib/i18n/server";
 import { NewsletterAction } from "@/components/newsletter-action";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Confirm newsletter subscription", robots: { index: false, follow: false }, referrer: "no-referrer" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await requestLocale()).t("meta.confirmNewsletter"), robots: { index: false, follow: false }, referrer: "no-referrer" };
+}
 
 export default async function ConfirmNewsletterPage({ searchParams }: { searchParams: Promise<{ id?: string | string[]; token?: string | string[] }> }) {
   const query = await searchParams;

@@ -41,4 +41,19 @@ describe("publication policy configuration", () => {
     expect(() => publicationPolicies({ ...configured, PUBLICATION_POLICY_EFFECTIVE_DATE: "2026-02-30" })).toThrow("valid YYYY-MM-DD");
     expect(() => publicationPolicies({ PUBLICATION_CONTACT_EMAIL: "editor@publication.test\r\nbcc:other@publication.test" })).toThrow("valid contact email");
   });
+
+  it("offers the same policy in French, section for section, with the operator's details", () => {
+    const english = publicationPolicies(configured).pages;
+    const french = publicationPolicies(configured, "fr").pages;
+    expect(Object.keys(french)).toEqual(Object.keys(english));
+    for (const [page, policy] of Object.entries(english)) {
+      expect(french[page].sections.map((section) => section.paragraphs.length)).toEqual(policy.sections.map((section) => section.paragraphs.length));
+    }
+    const text = JSON.stringify(french);
+    expect(text).toContain("Charte éditoriale");
+    expect(text).toContain(configured.PUBLICATION_CONTACT_EMAIL);
+    expect(text).toContain(configured.PUBLICATION_RETENTION_SUMMARY);
+    expect(JSON.stringify(publicationPolicies({}, "fr").pages)).toContain("doit être fournie avant le lancement");
+    expect(publicationPolicies({}, "fr").approved).toBe(false);
+  });
 });

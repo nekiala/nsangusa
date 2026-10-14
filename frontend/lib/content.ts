@@ -1,4 +1,4 @@
-import { api, type ApiArticle, type ArticleSource, type Page } from "@/lib/api";
+import { api, type ApiArticle, type ArticleSource, type ContentLanguage, type Page } from "@/lib/api";
 import { publicApi, type ArticleSummary, type PublicSearchResult } from "@/lib/public-api";
 import { resolvedContent, type ArticleContent } from "@/lib/article-content";
 
@@ -8,6 +8,10 @@ export type Article = {
   body: string[]; content?: ArticleContent; tags: string[]; commentsEnabled: boolean; updatedAt: string; editorialContext: string | null;
   sources: ArticleSource[]; heroObjectKey: string | null; imageAltText: string | null; generatedImage: boolean; seoTitle: string; seoDescription: string;
   correctionNote: string | null;
+  /** Whether an approved illustration can be requested for this article. */
+  hasImage?: boolean;
+  /** Language of the text shown, which may be the original when no version exists in the reader's language. */
+  language?: ContentLanguage;
 };
 
 export const topics: Topic[] = ["Culture", "Cities", "Technology", "Ideas"];
@@ -21,7 +25,8 @@ function present(article: ApiArticle): Article {
     updatedAt: article.updatedAt, editorialContext: article.editorialContext, sources: article.sources,
     heroObjectKey: article.heroObjectKey || null, imageAltText: article.imageAltText || null, generatedImage: article.generatedImage,
     seoTitle: article.seoTitle || article.headline, seoDescription: article.seoDescription || article.summary,
-    correctionNote: article.state === "PUBLISHED" ? article.correctionNote : null
+    correctionNote: article.state === "PUBLISHED" ? article.correctionNote : null, language: article.language,
+    hasImage: Boolean(article.heroObjectKey)
   };
 }
 
@@ -39,7 +44,8 @@ function presentSummary(article: ArticleSummary | PublicSearchResult): Article {
     tags: article.tags,
     commentsEnabled: false,
     updatedAt: article.updatedAt, editorialContext: null, sources: [], heroObjectKey: null, imageAltText: null,
-    generatedImage: false, seoTitle: article.headline, seoDescription: article.summary, correctionNote: null
+    generatedImage: false, seoTitle: article.headline, seoDescription: article.summary, correctionNote: null,
+    hasImage: Boolean(article.hasImage)
   };
 }
 
@@ -51,15 +57,15 @@ export const facetTitle = (value: string) => value.charAt(0).toUpperCase() + val
 export const facetPath = (kind: "topics" | "tags", value: string) => `/${kind}/${encodeURIComponent(value.trim().toLowerCase())}`;
 
 export const contentApi = {
-  async latest(page = 0, size = 20): Promise<ArticlePage> { return presentPage(await publicApi.published(page, size)); },
+  async latest(page = 0, size = 20, lang?: ContentLanguage): Promise<ArticlePage> { return presentPage(await publicApi.published(page, size, lang)); },
   async featured(): Promise<Article> {
     const article = (await contentApi.latest(0, 1)).items[0];
     if (!article) throw new Error("No published articles are available.");
     return article;
   },
-  async bySlug(slug: string): Promise<Article | undefined> {
+  async bySlug(slug: string, lang?: ContentLanguage): Promise<Article | undefined> {
     try {
-      const article = await api.articles.bySlug(slug);
+      const article = await api.articles.bySlug(slug, lang);
       return article.state === "PUBLISHED" ? present(article) : undefined;
     } catch (error) {
       if (error instanceof Error && "status" in error && error.status === 404) return undefined;
@@ -68,11 +74,11 @@ export const contentApi = {
   },
   topics: publicApi.topics,
   tags: publicApi.tags,
-  async related(slug: string): Promise<Article[]> { return (await publicApi.related(slug)).map(presentSummary); },
-  async byTopic(topic: string, page = 0, size = 20): Promise<ArticlePage> { return presentPage(await publicApi.byTopic(topic, page, size)); },
-  async byTag(tag: string, page = 0, size = 20): Promise<ArticlePage> { return presentPage(await publicApi.byTag(tag, page, size)); },
-  async search(term: string, page = 0, size = 20): Promise<ArticlePage> {
+  async related(slug: string, lang?: ContentLanguage): Promise<Article[]> { return (await publicApi.related(slug, 3, lang)).map(presentSummary); },
+  async byTopic(topic: string, page = 0, size = 20, lang?: ContentLanguage): Promise<ArticlePage> { return presentPage(await publicApi.byTopic(topic, page, size, lang)); },
+  async byTag(tag: string, page = 0, size = 20, lang?: ContentLanguage): Promise<ArticlePage> { return presentPage(await publicApi.byTag(tag, page, size, lang)); },
+  async search(term: string, page = 0, size = 20, lang?: ContentLanguage): Promise<ArticlePage> {
     const query = term.trim();
-    return query ? presentPage(await publicApi.search(query, page, size)) : { items: [], page, size, total: 0 };
+    return query ? presentPage(await publicApi.search(query, page, size, lang)) : { items: [], page, size, total: 0 };
   }
 };

@@ -25,6 +25,9 @@ class SearchEventConsumer {
   }
 
   @KafkaListener(topics = EventTopics.PUBLICATION, groupId = CONSUMER)
+  @KafkaListener(
+      topics = EventTopics.PUBLICATION_RETRY,
+      groupId = CONSUMER + EventTopics.RETRY_GROUP_SUFFIX)
   @Transactional
   void consume(String json) {
     String eventType = reader.eventType(json);

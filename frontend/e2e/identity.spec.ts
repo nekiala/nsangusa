@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./english";
 
 test("verification and recovery links require explicit completion", async ({ page }) => {
   await page.goto(`/verify-email?token=${"v".repeat(43)}`);
