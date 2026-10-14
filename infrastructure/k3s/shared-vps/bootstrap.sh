@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Bootstraps the shared-VPS `test` environment's data services and deploy identity.
+# Bootstraps a shared-VPS environment's data services and deploy identity.
 #
 # Run on the VPS as root from a copy of this directory:
-#   DEPLOY_SSH_PUBLIC_KEY='ssh-ed25519 AAAA... nsangusa-test-deploy' ./bootstrap.sh
+#   NSANGUSA_ENVIRONMENT=staging \
+#     DEPLOY_SSH_PUBLIC_KEY='ssh-ed25519 AAAA... nsangusa-deploy' ./bootstrap.sh
+#
+# NSANGUSA_ENVIRONMENT is `test` (the default) or `staging`. The manifests name the `test`
+# namespaces; they are rendered for the selected environment before they are applied.
 #
 # Idempotent: existing CA material, credentials and Secrets are never rotated here. Generated
 # secrets stay on the server (root-only files and Kubernetes Secrets); nothing is printed.
@@ -10,11 +14,18 @@ set -euo pipefail
 umask 077
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-state=/etc/nsangusa-test
+environment="${NSANGUSA_ENVIRONMENT:-test}"
+[[ "$environment" == test || "$environment" == staging ]] || {
+  echo "NSANGUSA_ENVIRONMENT must be test or staging" >&2
+  exit 1
+}
+state="/etc/nsangusa-$environment"
 tls="$state/tls"
 kubectl() { /usr/local/bin/k3s kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml "$@"; }
-data_ns=nsangusa-test-data
-app_ns=nsangusa-test
+# Renders a manifest from this directory, or standard input, for the selected environment.
+render() { sed "s/nsangusa-test/nsangusa-$environment/g" ${1:+"$here/$1"}; }
+data_ns="nsangusa-$environment-data"
+app_ns="nsangusa-$environment"
 
 install -d -m 0700 "$state" "$tls"
 
@@ -22,7 +33,7 @@ install -d -m 0700 "$state" "$tls"
 if [[ ! -s "$tls/ca.key" ]]; then
   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$tls/ca.key"
   openssl req -x509 -new -key "$tls/ca.key" -sha256 -days 730 \
-    -subj "/CN=Nsangusa test internal CA" \
+    -subj "/CN=Nsangusa $environment internal CA" \
     -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
     -addext "keyUsage=critical,keyCertSign,cRLSign" \
     -out "$tls/ca.crt"
@@ -67,7 +78,7 @@ broker_jaas="org.apache.kafka.common.security.plain.PlainLoginModule required us
 client_jaas="org.apache.kafka.common.security.plain.PlainLoginModule required username=\"news\" password=\"$KAFKA_PASSWORD\";"
 
 # --- Namespaces, storage class and policies -----------------------------------------------
-kubectl apply -f "$here/00-namespace.yaml"
+render 00-namespace.yaml | kubectl apply -f -
 
 create_secret() {
   local namespace="$1" name="$2"
@@ -98,7 +109,7 @@ create_secret "$data_ns" test-data-credentials generic test-data-credentials \
   --from-literal=S3_SECRET_KEY="$S3_SECRET_KEY" \
   --from-literal=S3_SSE_KEY="$S3_SSE_KEY"
 
-create_secret "$app_ns" nsangusa-test-runtime generic nsangusa-test-runtime \
+create_secret "$app_ns" "$app_ns-runtime" generic "$app_ns-runtime" \
   --from-literal=DATABASE_USERNAME="$DATABASE_USERNAME" \
   --from-literal=DATABASE_PASSWORD="$DATABASE_PASSWORD" \
   --from-literal=KAFKA_SASL_JAAS_CONFIG="$client_jaas" \
@@ -118,11 +129,11 @@ fi
 
 # --- Data services -------------------------------------------------------------------------
 for manifest in 10-postgres.yaml 20-kafka.yaml 30-redis.yaml 40-seaweedfs.yaml 50-mailpit.yaml; do
-  kubectl apply -f "$here/$manifest"
+  render "$manifest" | kubectl apply -f -
 done
 
 # --- Deploy identity: namespace-scoped ServiceAccount reached through a forward-only SSH key ---
-kubectl apply -f - <<'EOF'
+render <<'EOF' | kubectl apply -f -
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -202,7 +213,7 @@ cat > "$state/deployer.kubeconfig" <<EOF
 apiVersion: v1
 kind: Config
 clusters:
-  - name: nsangusa-test
+  - name: $app_ns
     cluster:
       server: https://127.0.0.1:6443
       certificate-authority-data: $ca_data
@@ -211,8 +222,8 @@ users:
     user:
       token: $token
 contexts:
-  - name: nsangusa-test
-    context: {cluster: nsangusa-test, user: nsangusa-deployer, namespace: nsangusa-test}
-current-context: nsangusa-test
+  - name: $app_ns
+    context: {cluster: $app_ns, user: nsangusa-deployer, namespace: $app_ns}
+current-context: $app_ns
 EOF
 echo "bootstrap complete"

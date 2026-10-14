@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "repository": "nekiala/nsangusa",
+  "environment": "staging",
+  "sourceCommit": "REPLACE_WITH_SIGNED_SOURCE_COMMIT",
+  "images": {
+    "backend": "REPLACE_WITH_BACKEND_DIGEST",
+    "frontend": "REPLACE_WITH_FRONTEND_DIGEST",
+    "otelCollector": "REPLACE_WITH_COLLECTOR_DIGEST"
+  },
+  "gates": {
+    "security": {
+      "status": "pending",
+      "approvedBy": "",
+      "evidenceUrl": "",
+      "completedAt": null,
+      "expiresAt": null,
+      "databaseUpdatedAt": null
+    },
+    "accessibility": {
+      "status": "pending",
+      "approvedBy": "",
+      "evidenceUrl": "",
+      "completedAt": null,
+      "expiresAt": null
+    },
+    "release-protections": {
+      "status": "pending",
+      "approvedBy": "",
+      "evidenceUrl": "",
+      "completedAt": null,
+      "expiresAt": null
+    }
+  }
+}

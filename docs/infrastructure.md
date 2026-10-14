@@ -179,7 +179,7 @@ the site behind basic auth. This is a running application for manual testing wit
 providers, **not staging qualification**: the `test` path skips the qualification-evidence step,
 and none of the Step 5/6 gates above are closed by it.
 
-`infrastructure/k3s/test-data/` holds the manifests and `bootstrap.sh`. Data services run in
+`infrastructure/k3s/shared-vps/` holds the manifests and `bootstrap.sh`. Data services run in
 `nsangusa-test-data` under the restricted Pod Security profile, reachable only from the
 application's backend and migration pods:
 
@@ -249,6 +249,58 @@ rotating existing material.
 **Limits:** one node and failure domain, local-path volumes without backup or PITR, no
 telemetry backend (the OTel collector is disabled), OIDC not configured, and a shared
 basic-auth password rather than per-user access control.
+
+### Promoting test to staging
+
+**Status: draft runbook, not executed.** On **2026-10-14** the owner chose to promote the
+shared-VPS `test` environment to `staging` instead of running both on the one node. Staging
+keeps the host, `staging.nsangusa.com`, NodePorts `30380`/`30381` and fake providers, but
+deploys through the workflow's `staging` path, which requires reviewed qualification evidence
+and hosted release protections. Afterwards there is no `test` environment.
+
+`bootstrap.sh` takes `NSANGUSA_ENVIRONMENT` (`test` by default, or `staging`) and renders the
+manifests' `nsangusa-test` names for it, so staging gets `nsangusa-staging` and
+`nsangusa-staging-data`, `/etc/nsangusa-staging`, the `nsangusa-staging-runtime` Secret, and a
+deployer bound only to `nsangusa-staging`. Kubernetes namespaces cannot be renamed, so staging
+is bootstrapped fresh with new CA material and credentials; nothing is copied from test.
+[`staging-helm-values.yaml`](../infrastructure/k3s/shared-vps/staging-helm-values.yaml) mirrors
+the test values with staging names and two replicas per component without autoscaling.
+
+1. **Reviewer.** Add a second GitHub collaborator. `main` requires an approval the author cannot
+   give, and staging requires an independent deployment reviewer.
+2. **GitHub protections.** On `main`, also require approval of the most recent reviewable push.
+   On the `staging` environment, add that reviewer as a required reviewer and prevent
+   self-review. The other checks already pass: up-to-date `release-readiness`, stale-review
+   dismissal, administrators included, no force pushes or deletion, `main` and `v*`
+   deployment policies, and the active `v*` tag ruleset without bypass actors.
+3. **Retire test (destructive; run on the VPS as root).** The test application was never
+   deployed, so its data services hold only bootstrap state. Delete the `nsangusa-test` and
+   `nsangusa-test-data` namespaces, then the released `local-path-retain` PersistentVolumes
+   they leave behind, and the `nsangusa-test-namespace` ClusterRole and ClusterRoleBinding.
+   Keep `/etc/nsangusa-test` until staging is verified, then remove it.
+4. **Bootstrap staging.** Place a `read:packages` credential at
+   `/etc/nsangusa-staging/ghcr-pull.json`, then run
+   `NSANGUSA_ENVIRONMENT=staging DEPLOY_SSH_PUBLIC_KEY='ssh-ed25519 ...' ./bootstrap.sh`.
+   Confirm all five data services are ready and the `kafka-topics` Job created all topics.
+5. **Nginx.** Install the updated [`https.conf`](../infrastructure/nginx/staging/https.conf),
+   move `/etc/nginx/nsangusa-test.htpasswd` to `/etc/nginx/nsangusa-staging.htpasswd`, run
+   `nginx -t`, reload, and re-record the protected-host baseline.
+6. **GitHub `staging` environment.** Add `CLUSTER_SSH_HOST` (variable), and as secrets:
+   `DEPLOY_SSH_KEY`, `DEPLOY_SSH_KNOWN_HOSTS`, `SMOKE_BASIC_AUTH`, `KUBE_CONFIG_DATA` from
+   `/etc/nsangusa-staging/deployer.kubeconfig`, `HELM_VALUES` from `staging-helm-values.yaml`
+   with `INTERNAL_CA_PEM` replaced by `/etc/nsangusa-staging/tls/ca.crt`, and a read-only
+   `RELEASE_GOVERNANCE_TOKEN` (see [staging qualification](staging-qualification.md#hosted-governance-preflight)).
+   Then delete the `test` environment and its secrets.
+7. **Images.** Push a `v*` tag from `main`; the image workflow reruns the quality gates, then
+   builds and signs both images.
+8. **Qualification.** For that commit and those digests, complete the `security`,
+   `accessibility` and `release-protections` records in
+   [`staging-qualification.template.json`](../infrastructure/k3s/shared-vps/staging-qualification.template.json)
+   with named reviewers and evidence, and store the result as `QUALIFICATION_EVIDENCE_JSON`.
+   The template deliberately fails validation until then. Records expire after 30 days, and
+   security intelligence after 48 hours.
+9. **Deploy.** Dispatch *Controlled deployment* for `staging` with the tag and digests; the
+   environment reviewer approves; the workflow's smoke test checks `https://staging.nsangusa.com`.
 
 ## Configuration
 
