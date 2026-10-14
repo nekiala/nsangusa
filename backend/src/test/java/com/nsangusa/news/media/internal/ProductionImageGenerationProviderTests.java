@@ -95,8 +95,59 @@ class ProductionImageGenerationProviderTests {
     assertThat(image.provider()).isEqualTo("openai");
     assertThat(image.model()).isEqualTo("gpt-image-1");
     assertThat(image.renderedPrompt()).contains("non-photorealistic", "Community library opening");
-    assertThat(image.promptVersion()).isEqualTo("editorial-illustration-v1");
+    assertThat(image.promptVersion()).isEqualTo("editorial-illustration-v2");
     assertThat(image.providerRequestId()).isEqualTo("req-editorial-image");
+    server.verify();
+  }
+
+  @Test
+  void citedOfficeIsLookedUpAndItsHolderIsPortrayed() {
+    server
+        .expect(requestTo("https://images.example.test/v1/responses"))
+        .andExpect(method(HttpMethod.POST))
+        .andExpect(
+            content()
+                .json(
+                    """
+            {"model":"gpt-5-mini","store":false,"tools":[{"type":"web_search"}]}
+            """))
+        .andExpect(content().string(containsString("Democratic Republic of the Congo")))
+        .andExpect(content().string(containsString("gouverneur de la banque centrale")))
+        .andRespond(
+            withSuccess(
+                """
+            {"output":[{"type":"web_search_call"},{"type":"message","content":[{"type":"output_text",
+            "text":"{\\"subjects\\":[{\\"name\\":\\"Example Holder\\",\\"role\\":\\"Governor of the central bank\\",\\"appearance\\":\\"Man in his fifties,\\\\nglasses, dark suit ([example.test](https://example.test/a))\\"},{\\"name\\":\\"sources, source_citations\\",\\"role\\":\\"-\\",\\"appearance\\":\\"https://example.test\\"}]}"}]}]}
+            """,
+                MediaType.APPLICATION_JSON));
+    server
+        .expect(requestTo("https://images.example.test/v1/images/generations"))
+        .andExpect(content().string(containsString("Example Holder, Governor of the central bank")))
+        .andRespond(withSuccess(response(PNG), MediaType.APPLICATION_JSON));
+
+    var image =
+        provider("gpt-5-mini")
+            .generate("Le gouverneur de la banque centrale annonce une mesure", "Illustration");
+
+    assertThat(image.renderedPrompt())
+        .contains("recognisable likeness", "holds that office")
+        .endsWith(
+            "- Example Holder, Governor of the central bank: Man in his fifties, glasses, dark suit");
+    server.verify();
+  }
+
+  @Test
+  void failedSubjectLookupStillIllustratesTheBrief() {
+    server
+        .expect(requestTo("https://images.example.test/v1/responses"))
+        .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+    server
+        .expect(requestTo("https://images.example.test/v1/images/generations"))
+        .andRespond(withSuccess(response(PNG), MediaType.APPLICATION_JSON));
+
+    var image = provider("gpt-5-mini").generate("Félix Tshisekedi à Kolwezi", "Illustration");
+
+    assertThat(image.renderedPrompt()).endsWith("Félix Tshisekedi à Kolwezi");
     server.verify();
   }
 
@@ -206,6 +257,17 @@ class ProductionImageGenerationProviderTests {
         "gpt-image-1",
         responseLimit,
         imageLimit);
+  }
+
+  private ProductionImageGenerationProvider provider(String subjectModel) {
+    return new ProductionImageGenerationProvider(
+        builder.build(),
+        JsonMapper.builder().build(),
+        ImageProviderCallExecutorTests.executor(3, 5),
+        "gpt-image-1",
+        10_000,
+        1000,
+        subjectModel);
   }
 
   private static String response(byte[] bytes) {

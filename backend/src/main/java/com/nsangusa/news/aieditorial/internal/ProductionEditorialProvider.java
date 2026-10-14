@@ -484,6 +484,13 @@ class ProductionEditorialProvider
           Fill translation with a faithful English version of the headline, summary, body,
           editorialContext, seoTitle, seoDescription and imageAltText: the same facts, attribution
           and hedging, with nothing added or omitted. Every other field stays in French.
+          imagePrompt is a brief for the illustrator, not published text. Describe an editorial
+          illustration, never a photograph, screenshot, or image containing text. When the claims
+          name a person, make that person the subject and give the full name and role as
+          supplied. When they cite only an office or role, such as the governor of the central
+          bank, make the holder of that office the subject and name the office, its institution,
+          and its country; do not guess the holder's name. Never ask for people to be left out,
+          anonymised, or generic when the claims are about a named or designated public figure.
           This is a draft, never a publication decision.
           """;
       default -> throw new IllegalArgumentException("Unsupported editorial operation");

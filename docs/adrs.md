@@ -187,3 +187,36 @@ by roughly 1,440 records per account per day. New event types use a separately p
 without querying module tables. Payloads exclude subscriber addresses, provider message IDs and
 free-text moderation reasons. Events without a consumer never drive publication or delivery;
 the database remains authoritative.
+
+## ADR-018: Illustrate the public figures a story is about
+
+**Decision (2026-10-14):** Editorial illustrations portray the public figures a story is about
+instead of avoiding people. The drafting prompt asks for an image brief that names the person
+the claims name, or the office and institution when the claims cite only a role, without
+guessing the holder. Before each image, the live adapter asks a text model
+(`IMAGE_SUBJECT_LOOKUP_MODEL`, default `gpt-5-mini`) with web search to identify at most four
+public figures named or designated by office, reading them as Congolese unless the brief says
+otherwise, and to describe their visible appearance. The lookup's structured result is
+sanitised (no links or citations, a name-shaped pattern, bounded length) and appended to the
+rendered prompt as portrait notes, so the stored prompt (`editorial-illustration-v2`) records
+exactly what the image model received. The lookup is best effort: any failure illustrates the
+brief alone. `IMAGE_SUBJECT_LOOKUP_ENABLED=false` turns it off.
+
+**Limits:** Likenesses are dignified, neutral illustrated portraits, never photographic, and
+never show a person doing something the brief only alleges. Private individuals, real logos,
+fabricated screenshots and text remain prohibited. The brief and portrait notes are untrusted
+subject matter, not instructions. Every generated image still requires explicit editor approval
+and keeps its AI provenance disclosure.
+
+**Why:** A Congolese political and economic news front about named officials is unclear and
+reads as evasive with generic or faceless imagery. Without a lookup, an image model guesses who
+holds an office or draws a generic figure. Illustration, not photorealism, keeps the image from
+being mistaken for evidence of an event.
+
+**Consequences:** This supersedes the earlier blanket avoidance of identifiable people (M01): the
+prohibition now covers private individuals and depictions that imply unproven conduct. Each image
+costs one extra text-model call with web search, and the brief is sent to the provider's search
+tool, which the provider approval must cover (D02). The lookup can misidentify an office holder;
+editors must check the likeness against the article before approving. Editorial and legal
+acceptance of likeness and personality-rights risk in the publication's jurisdictions remains an
+open gate (D05), not something this decision closes.

@@ -218,6 +218,13 @@ must belong to a Project with read access to user lookup and timelines.
 `IMAGE_LIVE_ENABLED=true` with `IMAGE_API_KEY` likewise selects the live image adapter on its own;
 the preview Compose file passes both and `IMAGE_MODEL` through.
 
+The live image adapter portrays the public figures a brief names. Before each image it asks
+`IMAGE_SUBJECT_LOOKUP_MODEL` (default `gpt-5-mini`), with web search, who the brief names or who
+holds an office it only cites, reading names and offices as Congolese unless the brief says
+otherwise, and appends the resulting portrait notes to the stored rendered prompt. The lookup is
+best effort: a failure illustrates the brief alone. `IMAGE_SUBJECT_LOOKUP_ENABLED=false` turns it
+off. Likenesses stay illustrated, never photographic, and every image still needs editor approval.
+
 `AI_AUTHORIZED_MODELS` is a comma-separated deployment ceiling, defaulting to `AI_MODEL`.
 `/admin/ai` selects within that catalog and publishes immutable editorial guidance versions.
 The stored prompt registry/selection governs generation; the legacy `AI_PROMPT_VERSION`
