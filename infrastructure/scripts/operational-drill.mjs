@@ -171,7 +171,7 @@ class Drill {
     const files = readdirSync(directory).filter((name) => /^V\d+__.*\.sql$/.test(name))
       .sort((left, right) => Number(left.split("__")[0].slice(1)) - Number(right.split("__")[0].slice(1)));
     this.evidence.migrations = Object.fromEntries(files.map((name) => [name, sha256(readFileSync(path.join(directory, name)))]));
-    require(files.at(-1).startsWith("V23__"), "expected operational V23 as latest migration");
+    require(files.at(-1).startsWith("V25__"), "expected V25 as latest migration");
     for (const name of files) this.sql("begin;\n" + readFileSync(path.join(directory, name), "utf8") + "\ncommit;");
     this.check("all_repository_migrations_applied_without_application_build", true);
   }
@@ -322,7 +322,7 @@ class Drill {
     this.check("recovery_replay_is_idempotent", JSON.stringify(this.inventory("restored")) === first);
     this.sql(sqlFile("operational-retention-test.sql"), "restored");
     this.check("retention_fail_closed_bounded_dry_run_and_legal_hold", true);
-    // Old application shape remains readable/writable after additive V23; this is not a binary rollout.
+    // Old application shape remains readable/writable after additive V23-V25; this is not a binary rollout.
     this.sql("begin; select id,event_type,aggregate_id,envelope_json,published_at " +
       "from outbox_events order by created_at limit 1; " +
       "update articles set version=version+1 where slug='retained-synthetic'; rollback;", "restored");
