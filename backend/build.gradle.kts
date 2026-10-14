@@ -118,6 +118,13 @@ configurations.configureEach {
   resolutionStrategy {
     cacheDynamicVersionsFor(0, "seconds")
     cacheChangingModulesFor(0, "seconds")
+    // Kafka's transitive 1.10.1 is affected by CVE-2026-106451, including on PMD's classpath.
+    eachDependency {
+      if (requested.group == "at.yawk.lz4" && requested.name == "lz4-java") {
+        useVersion("1.11.4")
+        because("CVE-2026-106451")
+      }
+    }
   }
 }
 
