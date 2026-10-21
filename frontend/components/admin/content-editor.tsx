@@ -1,12 +1,13 @@
 "use client";
 
+import { tx } from "@/lib/i18n/staff";
 import { useId, useState } from "react";
 import { MAX_CONTENT_BLOCKS, type ArticleBlock, type ArticleContent } from "@/lib/article-content";
 
 const types: { type: ArticleBlock["type"]; label: string }[] = [
   { type: "paragraph", label: "Paragraph" }, { type: "heading", label: "Heading" },
-  { type: "quote", label: "Quote" }, { type: "unordered_list", label: "Bulleted list" },
-  { type: "ordered_list", label: "Numbered list" }, { type: "link", label: "Link" }
+  { type: "quote", label: "Quote" }, { type: "unordered_list", label: tx("Bulleted list") },
+  { type: "ordered_list", label: tx("Numbered list") }, { type: "link", label: "Link" }
 ];
 
 export function ContentEditor({ value, onChange, disabled }: {
@@ -24,8 +25,8 @@ export function ContentEditor({ value, onChange, disabled }: {
     onChange({ version: 1, blocks });
     setAnnouncement(`Block ${index + 1} moved to position ${index + direction + 1}.`);
   };
-  return <fieldset disabled={disabled}><legend>Structured article body</legend>
-    <p id={`${id}-help`}>Add paragraphs, headings, quotes, lists or HTTP(S) links. Text is always literal: HTML and embeds are not interpreted.</p>
+  return <fieldset disabled={disabled}><legend>{tx("Structured article body")}</legend>
+    <p id={`${id}-help`}>{tx("Add paragraphs, headings, quotes, lists or HTTP(S) links. Text is always literal: HTML and embeds are not interpreted.")}</p>
     {value.blocks.map((block, index) => {
       const label = types.find((item) => item.type === block.type)!.label;
       const textId = `${id}-text-${index}`;
@@ -59,7 +60,7 @@ export function ContentEditor({ value, onChange, disabled }: {
         </div>
       </fieldset>;
     })}
-    <label htmlFor={`${id}-type`}>New block type</label>
+    <label htmlFor={`${id}-type`}>{tx("New block type")}</label>
     <select id={`${id}-type`} value={nextType} onChange={(event) => setNextType(event.target.value as ArticleBlock["type"])}>
       {types.map(({ type, label }) => <option key={type} value={type}>{label}</option>)}
     </select>
@@ -68,7 +69,7 @@ export function ContentEditor({ value, onChange, disabled }: {
         ? { type: nextType, items: [""] } : nextType === "link" ? { type: "link", text: "", url: "" } : { type: nextType, text: "" };
       onChange({ version: 1, blocks: [...value.blocks, block] });
       setAnnouncement(`Block ${value.blocks.length + 1} added.`);
-    }}>Add content block</button>
+    }}>{tx("Add content block")}</button>
     <p aria-live="polite">{announcement}</p>
   </fieldset>;
 }

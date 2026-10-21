@@ -1,5 +1,5 @@
 import { publicApi } from "@/lib/public-api";
-import { articleUrl, escapeXml, FEED_PAGE_SIZE, MAX_SITEMAP_SEGMENTS, unavailableFeed, xmlResponse } from "@/lib/public-feeds";
+import { FEED_PAGE_SIZE, MAX_SITEMAP_SEGMENTS, SITEMAP_NAMESPACES, sitemapUrls, unavailableFeed, xmlResponse } from "@/lib/public-feeds";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -11,7 +11,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ seg
   try {
     const result = await publicApi.published(page, FEED_PAGE_SIZE);
     if (!result.items.length) return unavailableFeed(404);
-    return xmlResponse(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${result.items.map((article) => `<url><loc>${escapeXml(articleUrl(article.slug))}</loc><lastmod>${escapeXml(article.updatedAt)}</lastmod></url>`).join("")}</urlset>`);
+    return xmlResponse(`<urlset ${SITEMAP_NAMESPACES}>${result.items.map((article) => sitemapUrls(`/articles/${encodeURIComponent(article.slug)}`, article.updatedAt)).join("")}</urlset>`);
   } catch {
     return unavailableFeed();
   }

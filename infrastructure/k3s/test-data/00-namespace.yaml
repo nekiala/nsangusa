@@ -1,0 +1,106 @@
+# Single-instance data services for the shared-VPS `test` deployment. Not HA, not managed PITR and
+# not staging qualification; see docs/infrastructure.md#shared-vps-test-environment.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nsangusa-test-data
+  labels:
+    app.kubernetes.io/part-of: nsangusa-test
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.36
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nsangusa-test
+  labels:
+    app.kubernetes.io/part-of: nsangusa-test
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.36
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# local-path defaults to Delete; keep test data if a claim is removed by mistake.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path-retain
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: nsangusa-test-data
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Only the application's backend and migration pods reach the data services.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: application-clients
+  namespace: nsangusa-test-data
+spec:
+  podSelector:
+    matchLabels:
+      nsangusa.io/data-service: "true"
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nsangusa-test
+          podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [backend, migration]
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 9094}
+        - {protocol: TCP, port: 6379}
+        - {protocol: TCP, port: 9000}
+        - {protocol: TCP, port: 1025}
+    # One-shot setup Jobs in this namespace create topics and the bucket.
+    - from:
+        - podSelector:
+            matchLabels:
+              nsangusa.io/setup: "true"
+      ports:
+        - {protocol: TCP, port: 9094}
+        - {protocol: TCP, port: 9000}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: setup-egress
+  namespace: nsangusa-test-data
+spec:
+  podSelector:
+    matchLabels:
+      nsangusa.io/setup: "true"
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - podSelector:
+            matchLabels:
+              nsangusa.io/data-service: "true"
+      ports:
+        - {protocol: TCP, port: 9094}
+        - {protocol: TCP, port: 9000}

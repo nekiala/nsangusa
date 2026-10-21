@@ -75,7 +75,7 @@ condition: the first immediate exec encountered the kubelet's warming cache befo
 The disposable `nsangusa-k3s-qualification` namespace is reserved for the committed fixtures;
 assert its absence before creating it and its owner label before deleting it.
 
-`infrastructure/scripts/check-shared-host.py` records only selected container/service identities,
+`infrastructure/scripts/check-shared-host.mjs` records only selected container/service identities,
 configuration fingerprints and a loopback HTTP status. Its version-2 baseline also records
 configuration symlink topology/targets and excludes certificate/private-key files. Historical
 version-1 pre/post-bootstrap evidence is retained as such; it is not silently upgraded to claim
@@ -140,6 +140,19 @@ ssh nsangusa 'sudo -n systemctl start nsangusa-acme-renew.service'
 ssh nsangusa 'sudo -n /usr/local/libexec/nsangusa-acme-verify'
 ```
 
+The verifier is a POSIX `sh` script using the host's OpenSSL, like the reload hook; it no longer
+needs Python. Install the repository copy at `/usr/local/libexec/nsangusa-acme-verify`
+(root-owned, mode 0755) and confirm the verifier command above passes.
+`infrastructure/scripts/staging-https.test.mjs` exercises it against real local TLS fixtures.
+
+On **2026-10-01** the shell verifier replaced the Python one on the staging host. Before
+installation, both versions passed against the live certificate from a temporary copy and reported
+the same leaf fingerprint. After installation, the direct verifier command and a manual
+`nsangusa-acme-renew.service` run (no renewal was due) both succeeded, and public HTTPS still
+returned the intended 503. Nginx and its configuration were unchanged. The Python version is
+retained, root-only, at `/var/backups/nsangusa-acme-verify.python-20260922`; to roll back, install
+it at the same path with mode 0755.
+
 Real HTTP-01 issuance and a subsequent simulated renewal/deploy-hook exercise passed. The
 renewal drill used the same filesystem sandbox as the persistent service, did not replace the
 production certificate with a test-CA certificate, and reloaded only Nginx configuration.
@@ -149,12 +162,93 @@ site still returned HTTPS 200. Non-secret evidence is in ignored
 `.local/operational-evidence/staging-https-20260922/`; no account keys or private certificates
 were copied into that evidence or the repository.
 
-The original preservation baseline remains intact. Future changes use
-`/etc/nsangusa-k3s/protected-host-after-https-20260922.json`, which includes the new staging site.
+The original preservation baseline remains intact. `/etc/nsangusa-k3s/protected-host-after-https-20260922.json`
+includes the new staging site; it was superseded on 2026-10-01 (see
+[test-data deployment](#test-data-deployment-2026-10-01)), and future changes compare against
+`/etc/nsangusa-k3s/protected-host-before-test-data-20261001.json`.
 The earlier baseline plus `/etc/nsangusa-k3s/approved-https-additions-20260922.json` can still
 prove that this operation did not replace original configuration.
 Application/data-service deployment, reviewer/hosted gates, access controls and the other
 Step 5/6 qualifications remain open; this HTTPS setup is not Step 7.
+
+## Shared-VPS test environment
+
+On **2026-09-29** the owner chose to run the workflow's `test` environment on the shared VPS,
+with data services in k3s, the GitHub-hosted runner reaching the API through an SSH tunnel and
+the site behind basic auth. This is a running application for manual testing with fake
+providers, **not staging qualification**: the `test` path skips the qualification-evidence step,
+and none of the Step 5/6 gates above are closed by it.
+
+`infrastructure/k3s/test-data/` holds the manifests and `bootstrap.sh`. Data services run in
+`nsangusa-test-data` under the restricted Pod Security profile, reachable only from the
+application's backend and migration pods:
+
+| Service | Transport | Storage |
+|---|---|---|
+| PostgreSQL 18.4 | TLS; backend uses `sslmode=verify-full` | 10 Gi `local-path-retain` |
+| Kafka 4.3.1 (KRaft, one node) | SASL_SSL with PLAIN on 9094; controller/inter-broker on loopback | 10 Gi `local-path-retain` |
+| Redis 8.10.0 | TLS only; persistence off, as locally | ephemeral |
+| SeaweedFS 4.48 | HTTPS (native TLS); SSE-S3 key so default `AES256` requests are encrypted at rest | 20 Gi `local-path-retain` |
+| Mailpit 1.27.8 | cluster-internal SMTP sink; no mail leaves the environment | ephemeral |
+
+`bootstrap.sh` runs on the VPS as root and is idempotent. It creates a private EC P-256 CA and
+per-service certificates under `/etc/nsangusa-test/tls`, generates credentials once into
+`/etc/nsangusa-test/credentials.env`, and creates the `nsangusa-test-runtime` Secret the chart
+references. It never rotates existing material; rotation means deliberately replacing the file
+and Secret, then restarting the affected workloads. The backend trusts the CA through
+configuration only: a pgjdbc single-certificate factory reading `NSANGUSA_INTERNAL_CA`, Kafka's
+PEM trust store, and a Spring SSL bundle (`internal`) used by Redis and `S3_SSL_BUNDLE`.
+
+The deploy identity is `nsangusa-deployer`: namespace `admin` in `nsangusa-test` plus get/patch
+on that one Namespace object. The workflow reaches the API as the `nsangusa-deploy` system user,
+whose root-owned `authorized_keys` entry allows only forwarding to `127.0.0.1:6443`
+(`restrict,port-forwarding,permitopen=...,command="/bin/false"`). The k3s guard is unchanged:
+the API port remains closed to the Internet.
+
+Host Nginx proxies `staging.nsangusa.com` to loopback NodePorts (frontend `30380`, backend
+`30381` for the chart's `backendPaths`) behind basic auth; see
+[`nginx/staging/https.conf`](../infrastructure/nginx/staging/https.conf). Masqueraded loopback
+NodePort traffic arrives from `cni0` (`10.42.0.1`), which `networkPolicy.hostIngress` admits.
+The protected-host baseline recorded after HTTPS must be re-recorded to include this vhost.
+
+The `test` profile seeds no accounts. Create the first administrator by registering through the
+site, confirming through Mailpit (`kubectl -n nsangusa-test-data port-forward svc/mailpit
+8025:8025` on the VPS) and granting the role once with an audited SQL statement.
+
+Object storage is SeaweedFS, replacing MinIO after MinIO's images, binaries and repository became
+unavailable or unmaintained, and a source rebuild of the pinned release failed the Trivy gate with
+unfixable CRITICAL findings. SeaweedFS runs with its master, volume and filer on loopback, only
+the S3 gateway bound to the pod IP (the NetworkPolicy admits port 9000 only), the filer's
+unauthenticated HTTP API disabled and telemetry off. Garage was also evaluated and rejected: it
+silently ignores the `AES256` SSE-S3 header (it implements only SSE-C) and has no native TLS.
+
+### Test-data deployment (2026-10-01)
+
+`bootstrap.sh` from `fix/spec-conformance` (`6e743f2`) ran once as root, without
+`DEPLOY_SSH_PUBLIC_KEY`. It created both namespaces, the `local-path-retain` class, the
+policies, the internal CA, per-service certificates, credentials and Secrets, the five data
+services and the `nsangusa-deployer` identity. All five services became ready. The
+`kafka-topics` Job created all twelve topics (`news.*.v1` plus `.retry` and `.dlt`) with three
+partitions each, confirmed from the broker's partition directories. The `seaweedfs-bucket` Job
+completed after two restarts while SeaweedFS was starting. Generated material is root-only under
+`/etc/nsangusa-test` (directory 0700, files 0600); none was printed or copied off the host.
+
+Before the deployment, the guard no longer matched the 2026-09-22 baseline for unrelated
+reasons: Ubuntu's `apt-daily-upgrade` restarted Nginx and the Actions runner at 06:49 UTC on
+2026-09-30, and the protected `eis-frontend` container was redeployed with a new image at 16:36
+UTC that day. Nginx configuration was unchanged. That baseline was left intact, a new pre-deployment
+snapshot was recorded as `protected-host-before-test-data-20261001.json`, and the post-deployment
+comparison against it passed. The staging hostname still serves its 503 placeholder.
+
+Not yet done: the `nsangusa-deploy` SSH user (needs the workflow's public key), the
+`ghcr-pull` Secret (needs a registry credential at `/etc/nsangusa-test/ghcr-pull.json`), the
+application deployment and the test-environment proxy vhost. Rerunning `bootstrap.sh` with
+`DEPLOY_SSH_PUBLIC_KEY` set, or after adding the registry credential, adds them without
+rotating existing material.
+
+**Limits:** one node and failure domain, local-path volumes without backup or PITR, no
+telemetry backend (the OTel collector is disabled), OIDC not configured, and a shared
+basic-auth password rather than per-user access control.
 
 ## Configuration
 
@@ -252,8 +346,8 @@ not evidence of a real multi-replica outage exercise.
 
 ## Local recovery tooling boundary
 
-`infrastructure/scripts/operational-drill.py` creates only its own digest-pinned, resource-bounded
-PostgreSQL/MinIO resources, no exposed host ports, and synthetic configuration/objects. It restores
+`infrastructure/scripts/operational-drill.mjs` creates only its own digest-pinned, resource-bounded
+PostgreSQL/SeaweedFS resources, no exposed host ports, and synthetic configuration/objects. It restores
 a logical `pg_dump` snapshot, replays newer deletion/suppression/provider-receipt evidence and
 proves bounded explicit-policy payload retention/legal holds. Unique evidence directories are
 retained; owned containers/volumes are normally cleaned even on failure. It never connects to

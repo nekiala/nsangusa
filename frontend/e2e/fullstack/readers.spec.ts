@@ -1,4 +1,5 @@
-import { expect, type Browser, type Page } from "@playwright/test";
+import { english, expect } from "../english";
+import { type Browser, type Page } from "@playwright/test";
 import type { ApiArticle, Page as ApiPage, SourcePost, SourceSummary } from "../../lib/api";
 import type { AccountExport, AccountProfile, AccountSession } from "../../lib/identity-api";
 import type {
@@ -89,7 +90,7 @@ test("real reader verifies email, manages versioned profile and sessions, resets
         "POST", "/api/v1/auth/password-reset/confirm");
       await expect(second.getByRole("status").filter({ hasText: "Your password has been reset." })).toBeVisible();
       expect(resetRequests.requests).toHaveLength(1);
-      await expect(second).toHaveURL(new URL("/password-reset", frontend).href);
+      await expect(second).toHaveURL(new URL(english("/password-reset"), frontend).href);
       expect((await page.request.get("/api/v1/auth/me")).status()).toBe(401);
       await rejectedLogin(page, account);
       await signIn(page, { ...account, password: newPassword });
@@ -100,7 +101,7 @@ test("real reader verifies email, manages versioned profile and sessions, resets
       await page.getByLabel("Type DELETE to confirm account deletion", { exact: true }).fill("DELETE");
       const deletion = await clickMutation(page, deleteButton, "DELETE", "/api/v1/auth/me");
       expect(deletion.request().postDataJSON()).toEqual({ confirmation: "DELETE", expectedVersion: beforeDeletion.version });
-      await expect(page).toHaveURL(new URL("/sign-in?deleted=1", frontend).href);
+      await expect(page).toHaveURL(new URL(english("/sign-in?deleted=1"), frontend).href);
       expect((await page.request.get("/api/v1/auth/me")).status()).toBe(401);
       await rejectedLogin(page, { ...account, password: newPassword });
       await rejectedLogin(second, account);
@@ -114,7 +115,7 @@ test("real reader verifies email, manages versioned profile and sessions, resets
 
 async function openArticle(page: Page, article: ApiArticle) {
   await page.goto("/");
-  const link = page.locator(`a[href="/articles/${article.slug}"]`).first();
+  const link = page.locator(`a[href="/en/articles/${article.slug}"]`).first();
   await expect(link, "The published article must be discoverable from the publication").toBeVisible();
   await link.click();
   await expect(page.getByRole("heading", { name: article.headline, exact: true })).toBeVisible();

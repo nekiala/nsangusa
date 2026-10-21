@@ -165,6 +165,32 @@ jobs:
             --set frontend.image.repository='ghcr.io/${{ github.repository }}/frontend' \
             --set frontend.image.digest='${{ inputs.frontendDigest }}' \
             --set otelCollector.image.digest='${{ inputs.otelCollectorDigest }}'
+      # Clusters whose API is not reachable from the Internet (the shared VPS) publish no API
+      # port; a key restricted to forwarding 127.0.0.1:6443 carries the kubeconfig's traffic.
+      - name: Open SSH tunnel to a private cluster API
+        if: vars.CLUSTER_SSH_HOST != ''
+        env:
+          CLUSTER_SSH_HOST: ${{ vars.CLUSTER_SSH_HOST }}
+          CLUSTER_SSH_USER: ${{ vars.CLUSTER_SSH_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          test -n "$DEPLOY_SSH_KEY" && test -n "$DEPLOY_SSH_KNOWN_HOSTS" || {
+            echo "DEPLOY_SSH_KEY and DEPLOY_SSH_KNOWN_HOSTS are required when CLUSTER_SSH_HOST is set" >&2
+            exit 1
+          }
+          install -d -m 0700 "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$RUNNER_TEMP/ssh/key"
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/ssh/key" "$RUNNER_TEMP/ssh/known_hosts"
+          ssh -f -N -T \
+            -i "$RUNNER_TEMP/ssh/key" \
+            -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+            -L 127.0.0.1:6443:127.0.0.1:6443 \
+            "${CLUSTER_SSH_USER:-nsangusa-deploy}@${CLUSTER_SSH_HOST}"
+          kubectl auth can-i create deployments --namespace nsangusa-${{ inputs.environment }}
       - name: Prepare restricted namespace
         env:
           TARGET_NAMESPACE: nsangusa-${{ inputs.environment }}
@@ -202,6 +228,7 @@ jobs:
       - name: Exercise the deployed public application
         env:
           PUBLIC_SMOKE_URL: ${{ vars.PUBLIC_SMOKE_URL }}
+          SMOKE_BASIC_AUTH: ${{ secrets.SMOKE_BASIC_AUTH }}
         run: |
           test -n "$PUBLIC_SMOKE_URL" || {
             echo "PUBLIC_SMOKE_URL environment variable must identify the deployed HTTPS origin" >&2

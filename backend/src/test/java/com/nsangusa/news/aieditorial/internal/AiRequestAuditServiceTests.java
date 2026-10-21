@@ -152,6 +152,20 @@ class AiRequestAuditServiceTests {
     var requested = org.mockito.ArgumentCaptor.forClass(ArticleDraftRequested.class);
     verify(events)
         .enqueue(eq("ArticleDraftRequested"), any(), any(), any(), any(), requested.capture());
+    var completed =
+        org.mockito.ArgumentCaptor.forClass(
+            com.nsangusa.news.integration.NewsEvents.StoryAnalysisCompleted.class);
+    verify(events)
+        .enqueue(
+            eq("StoryAnalysisCompleted"),
+            eq(storyId),
+            eq(analysisEvent.correlationId()),
+            eq(analysisEvent.eventId()),
+            eq("story-analysis-completed:" + storyId),
+            completed.capture());
+    assertThat(completed.getValue().confidence()).isEqualTo(requested.getValue().confidence());
+    assertThat(completed.getValue().claimCount()).isEqualTo(requested.getValue().claims().size());
+    assertThat(completed.getValue().warnings()).isEqualTo(requested.getValue().warnings());
     var draftEvent =
         new EventEnvelope<>(
             UUID.randomUUID(),

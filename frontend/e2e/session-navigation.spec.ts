@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "./english";
+import { type Page } from "@playwright/test";
 import { scanAccessibility, tabTo } from "./accessibility-helpers";
 
 async function signIn(page: Page, account: string) {
@@ -29,13 +30,13 @@ for (const { account, workspaces } of [
     }
     await expectAccount();
     await header.getByRole("link", { name: "Nsangusa home" }).click();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/en$/);
     await expectAccount();
     await page.goBack();
     await expect(page).toHaveURL(/\/profile$/);
     await expectAccount();
     await page.goForward();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/en$/);
     await expectAccount();
     await page.reload();
     await expectAccount();

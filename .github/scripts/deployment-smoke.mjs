@@ -10,15 +10,23 @@ export function smokeTarget(origin, allowLoopbackHttp = false) {
     && url.pathname === "/" && !url.search && !url.hash, "Smoke target must be an exact HTTPS origin (explicit loopback HTTP is only for local exercises)");
   return url.origin;
 }
-export async function deploymentSmoke(origin, { allowLoopbackHttp = false, fetcher = fetch } = {}) {
+// An access boundary in front of a test environment (for example proxy basic auth) must not
+// change what the smoke checks observe behind it; credentials never travel in the origin URL.
+export function smokeHeaders(basicAuth = "") {
+  if (!basicAuth) return {};
+  requireValue(/^[^:\s]+:\S+$/.test(basicAuth), "Smoke basic auth must be user:password");
+  return { Authorization: `Basic ${Buffer.from(basicAuth).toString("base64")}` };
+}
+export async function deploymentSmoke(origin, { allowLoopbackHttp = false, fetcher = fetch, basicAuth = "" } = {}) {
   const target = smokeTarget(origin, allowLoopbackHttp);
+  const headers = smokeHeaders(basicAuth);
   const results = [];
   for (const [path, expected] of [
     ["/sign-in", 200], ["/", 200], ["/api/v1/articles?limit=1", 200],
     ["/api/v1/auth/me", 401], ["/api/v1/admin/users", 401], ["/robots.txt", 200], ["/sitemap.xml", 200]
   ]) {
     const response = await fetcher(`${target}${path}`, {
-      redirect: "error", cache: "no-store", signal: AbortSignal.timeout(15_000)
+      redirect: "error", cache: "no-store", headers, signal: AbortSignal.timeout(15_000)
     });
     try {
       requireValue(response.status === expected, `Deployment smoke failed: ${path} must return ${expected} (received ${response.status})`);
@@ -40,7 +48,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log("HTTPS smoke target is configured.");
   } else {
     console.log(JSON.stringify(await deploymentSmoke(process.env.PUBLIC_SMOKE_URL, {
-      allowLoopbackHttp: process.argv.includes("--allow-loopback-http")
+      allowLoopbackHttp: process.argv.includes("--allow-loopback-http"),
+      basicAuth: process.env.SMOKE_BASIC_AUTH || ""
     }), null, 2));
   }
 }

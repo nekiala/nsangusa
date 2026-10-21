@@ -26,7 +26,7 @@ class SearchApplicationServiceTests {
   void normalizesFacetsAndBoundsPagination() {
     var service = new SearchApplicationService(articles, documents);
     var page = new SearchPage(List.of(), 0, 20, 0);
-    when(documents.byTag("breaking news", 0, 20)).thenReturn(page);
+    when(documents.byTag("breaking news", 0, 20, null)).thenReturn(page);
 
     assertThat(service.byTag("  Breaking News ", 0, 20)).isSameAs(page);
     assertThatThrownBy(() -> service.search("query", -1, 20))

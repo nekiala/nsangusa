@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { expect, type APIRequestContext } from "@playwright/test";
+import { english, expect } from "../english";
+import { type APIRequestContext } from "@playwright/test";
 import type { ApiArticle, SourcePost, SourceSummary } from "../../lib/api";
 import { contentPlainText, type ArticleContent } from "../../lib/article-content";
 import { expectNoHorizontalOverflow, expectReducedMotion, expectVisibleFocus, publicKeyboardJourney, scanAccessibility, tabTo } from "../accessibility-helpers";
@@ -45,7 +46,7 @@ async function transition(request: APIRequestContext, id: string, action: "appro
 
 test("Step 5 public desktop/mobile WCAG, keyboard, reduced motion and enforced production headers", async ({ page }, info) => {
   await page.goto("/topics");
-  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", new URL("/topics", frontend).href);
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", new URL(english("/topics"), frontend).href);
   await securityHeaderJourney(page);
   await publicKeyboardJourney(page, info);
 });

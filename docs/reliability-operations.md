@@ -60,19 +60,18 @@ makes stale completion callbacks no-ops.
 
 ### Executable isolated local recovery qualification
 
-From the repository root, using existing Python 3.9+, Docker and OpenSSL:
+From the repository root, using Node.js 24, Docker and OpenSSL:
 
 ```sh
-python3 infrastructure/scripts/operational-drill.py \
+node infrastructure/scripts/operational-drill.mjs \
   --output .local/operational-evidence/my-unique-run
 ```
 
 The output directory must be new and below the repository. No database URLs, host ports,
 production credentials, real source data or provider calls are accepted. The script creates
 unique labelled containers/volumes, without touching either preview or phase4 infrastructure.
-Service artifacts are digest-pinned. PostgreSQL is bounded to 512 MiB / 0.5 CPU, MinIO to
-256 MiB / 0.5 CPU, each short-lived object client to 256 MiB / 0.5 CPU (Go memory target
-192 MiB, two worker processors). No host ports are
+Service artifacts are digest-pinned. PostgreSQL is bounded to 512 MiB / 0.5 CPU, SeaweedFS to
+256 MiB / 0.5 CPU, each short-lived signed-request object client to 256 MiB / 0.5 CPU. No host ports are
 published; services use isolated network namespaces. SQL has 15-second statement / five-second
 lock deadlines, at most 15 database connections, two synthetic sources, 100-row ledger limits
 and a 16 MiB archive limit.
@@ -119,7 +118,7 @@ and volumes only. Never use project-wide `down -v`, name-pattern deletion or glo
 
 ### Optional real-binary rollback and forward qualification
 
-`infrastructure/scripts/binary-qualification.py` separately runs **candidate backend/frontend →
+`infrastructure/scripts/binary-qualification.mjs` separately runs **candidate backend/frontend →
 previous backend/frontend → candidate backend/frontend** against one fresh owned database.
 Supply four distinct, already-local full `sha256:` image IDs or repository digests. The runner
 never builds or pulls images. Candidates validate current repository Flyway checksums; the previous
@@ -157,7 +156,7 @@ ingress either. The owned network remains `internal: true` in both modes. Provid
 without disabling the candidate's Prometheus registry.
 
 ```sh
-python3 infrastructure/scripts/binary-qualification.py \
+node infrastructure/scripts/binary-qualification.mjs \
   --http-transport internal \
   --previous-backend "$PREVIOUS_BACKEND_ID" \
   --previous-frontend "$PREVIOUS_FRONTEND_ID" \
@@ -176,8 +175,7 @@ unqualified. The transport unit checks use local synthetic HTTP fixtures, not ap
 evidence:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
-  -s infrastructure/scripts -p test_binary_qualification.py -v
+node --test infrastructure/scripts/binary-qualification.test.mjs
 ```
 
 ### Explicit-policy payload retention and holds
@@ -257,7 +255,7 @@ ConfigMaps or opt-in Prometheus Operator resources. See [infrastructure.md](infr
 for secure port/network wiring. Nothing installs Prometheus, Grafana, Alertmanager or their CRDs.
 
 ```sh
-HELM=/path/to/existing/helm python3 infrastructure/scripts/test-monitoring.py
+HELM=/path/to/existing/helm node infrastructure/scripts/test-monitoring.mjs
 ```
 
 This renders safe/default and CRD-qualified paths, rejects unsafe/missing-controller combinations,

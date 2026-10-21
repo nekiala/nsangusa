@@ -21,24 +21,24 @@ class SearchApplicationService implements SearchService {
 
   @Override
   @Transactional(readOnly = true)
-  public SearchPage search(String query, int page, int size) {
+  public SearchPage search(String query, int page, int size, String language) {
     String normalized = required(query, "Search query");
     if (normalized.length() > 200) {
       throw new IllegalArgumentException("Search query is too long");
     }
-    return documents.search(normalized, page(page), size(size));
+    return documents.search(normalized, page(page), size(size), language);
   }
 
   @Override
   @Transactional(readOnly = true)
-  public SearchPage byTopic(String topic, int page, int size) {
-    return documents.byTopic(facet(topic), page(page), size(size));
+  public SearchPage byTopic(String topic, int page, int size, String language) {
+    return documents.byTopic(facet(topic), page(page), size(size), language);
   }
 
   @Override
   @Transactional(readOnly = true)
-  public SearchPage byTag(String tag, int page, int size) {
-    return documents.byTag(facet(tag), page(page), size(size));
+  public SearchPage byTag(String tag, int page, int size, String language) {
+    return documents.byTag(facet(tag), page(page), size(size), language);
   }
 
   @Override

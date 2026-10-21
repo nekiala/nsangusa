@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as pause } from "node:timers/promises";
-import { expect, test as base, type APIRequestContext, type Locator, type Page, type Request } from "@playwright/test";
+import { english, expect, test as base } from "../english";
+import { type APIRequestContext, type Locator, type Page, type Request } from "@playwright/test";
 import type { AccountProfile } from "../../lib/identity-api";
 
 export const frontend = process.env.FULLSTACK_FRONTEND_URL || "http://127.0.0.1:13000";
@@ -67,7 +68,7 @@ export async function signIn(page: Page, account: Pick<TestAccount, "email" | "p
   await form.getByLabel("Email address", { exact: true }).fill(account.email);
   await form.getByLabel("Password", { exact: true }).fill(account.password);
   await clickMutation(page, form.getByRole("button", { name: "Sign in", exact: true }), "POST", "/api/v1/auth/login");
-  await expect(page).toHaveURL(new URL(destination, frontend).href);
+  await expect(page).toHaveURL(new URL(english(destination), frontend).href);
 }
 
 export async function rejectedLogin(page: Page, account: Pick<TestAccount, "email" | "password">) {
@@ -93,7 +94,8 @@ export async function waitForMail(request: APIRequestContext, recipient: string,
 
 export function mailLink(message: MailMessage, path: string): URL {
   const links = `${message.Text}\n${message.HTML}`.replaceAll("&amp;", "&").match(/https?:\/\/[^\s"'<>]+/g) || [];
-  const link = links.map((value) => new URL(value)).find((url) => url.pathname === path);
+  // Mail follows the language of the page that asked for it, which in these suites is English.
+  const link = links.map((value) => new URL(value)).find((url) => url.pathname === english(path));
   expect(link, `Mail must contain the browser ${path} link`).toBeDefined();
   expect(link!.origin).toBe(new URL(frontend).origin);
   expect(link!.searchParams.get("token")).toBeTruthy();
@@ -126,7 +128,7 @@ export async function registerVerified(page: Page, account: TestAccount, browser
       "POST", "/api/v1/auth/verify-email");
     await expect(page.getByRole("status").filter({ hasText: "Your email is verified." })).toBeVisible();
     expect(completion.requests).toHaveLength(1);
-    await expect(page).toHaveURL(new URL("/verify-email", frontend).href);
+    await expect(page).toHaveURL(new URL(english("/verify-email"), frontend).href);
   } finally {
     completion.stop();
   }

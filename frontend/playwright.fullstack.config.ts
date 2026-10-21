@@ -11,7 +11,8 @@ export default defineConfig({
   retries: 0,
   timeout: 240_000,
   expect: { timeout: 20_000 },
-  use: { baseURL: frontend, trace: "retain-on-failure", timezoneId: "UTC" },
+  // Requests ask for English, so mail and links triggered by API calls match the English pages under test.
+  use: { baseURL: frontend, trace: "retain-on-failure", timezoneId: "UTC", locale: "en-GB", extraHTTPHeaders: { "Accept-Language": "en" } },
   webServer: process.env.FULLSTACK_START_FRONTEND === "false" ? undefined : {
     command: "npm run build && mkdir -p .next-fullstack/standalone/.next-fullstack && cp -R .next-fullstack/static .next-fullstack/standalone/.next-fullstack/static && node .next-fullstack/standalone/server.js",
     url: `${frontend}/sign-in`,

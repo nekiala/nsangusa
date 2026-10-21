@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect } from "../english";
 import type { AccountProfile, AdminUser } from "../../lib/identity-api";
 import type { AiConfiguration, AiPromptVersion, AiProvider, AiProviderSetup } from "../../lib/ai-admin-api";
 import {

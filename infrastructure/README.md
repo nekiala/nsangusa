@@ -34,4 +34,4 @@ NetworkPolicy is default-deny and always permits selected cluster DNS. Backend, 
 
 The migration hook uses the backend image and runtime Secret, enables Flyway, disables regular Flyway in application replicas, and must finish before an atomic upgrade proceeds. Schema changes must be backward-compatible with the prior application revision.
 
-Image tags were checked against Docker Hub on 2026-09-02: PostgreSQL `18.4`, Kafka `4.3.1`, Redis `8.10.0`, MinIO `RELEASE.2025-04-22T22-12-26Z`, MinIO client `RELEASE.2025-05-21T01-59-54Z`, Mailpit `v1.27.8`, OTel Collector `0.132.0`, Node `24.20.0-bookworm-slim`, and Eclipse Temurin `25-jre-noble`. Compose tags are development-only. Runtime base images and production Helm releases are digest-pinned.
+Image tags were checked against Docker Hub on 2026-09-02: PostgreSQL `18.4`, Kafka `4.3.1`, Redis `8.10.0`, SeaweedFS `4.48` (replacing MinIO on 2026-09-29), Mailpit `v1.27.8`, OTel Collector `0.132.0`, Node `24.20.0-bookworm-slim`, and Eclipse Temurin `25-jre-noble`. Compose tags are development-only. Runtime base images and production Helm releases are digest-pinned.

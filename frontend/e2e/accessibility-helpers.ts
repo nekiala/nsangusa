@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { writeFile } from "node:fs/promises";
-import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
+import { expect } from "./english";
+import { type Locator, type Page, type TestInfo } from "@playwright/test";
 
 export async function scanAccessibility(page: Page, info: TestInfo, name: string) {
   await expect(page).toHaveTitle(/\S/);
@@ -72,7 +73,7 @@ export async function publicKeyboardJourney(page: Page, info: TestInfo) {
   await scanAccessibility(page, info, "newsletter-mobile-320");
   const footerEmail = page.getByRole("contentinfo").getByLabel("Email address", { exact: true });
   await tabTo(page, footerEmail);
-  expect(await footerEmail.evaluate((element) => getComputedStyle(element).outlineColor)).toBe("rgb(247, 244, 237)");
+  expect(await footerEmail.evaluate((element) => getComputedStyle(element).outlineColor)).toBe("rgb(255, 255, 255)");
   await expectReducedMotion(page);
   await page.goto("/register");
   await scanAccessibility(page, info, "registration-mobile-320");

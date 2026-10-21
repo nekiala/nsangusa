@@ -25,8 +25,9 @@ class SearchController {
   ResponseEntity<SearchPage> search(
       @RequestParam String q,
       @RequestParam(defaultValue = "0") int page,
-      @RequestParam(defaultValue = "20") int size) {
-    return publicResponse(search.search(q, page, size));
+      @RequestParam(defaultValue = "20") int size,
+      @RequestParam(required = false) String lang) {
+    return publicResponse(search.search(q, page, size, language(lang)));
   }
 
   @GetMapping("/topics")
@@ -38,8 +39,9 @@ class SearchController {
   ResponseEntity<SearchPage> topic(
       @PathVariable String topic,
       @RequestParam(defaultValue = "0") int page,
-      @RequestParam(defaultValue = "20") int size) {
-    return publicResponse(search.byTopic(topic, page, size));
+      @RequestParam(defaultValue = "20") int size,
+      @RequestParam(required = false) String lang) {
+    return publicResponse(search.byTopic(topic, page, size, language(lang)));
   }
 
   @GetMapping("/tags")
@@ -51,11 +53,16 @@ class SearchController {
   ResponseEntity<SearchPage> tag(
       @PathVariable String tag,
       @RequestParam(defaultValue = "0") int page,
-      @RequestParam(defaultValue = "20") int size) {
-    return publicResponse(search.byTag(tag, page, size));
+      @RequestParam(defaultValue = "20") int size,
+      @RequestParam(required = false) String lang) {
+    return publicResponse(search.byTag(tag, page, size, language(lang)));
   }
 
   private static <T> ResponseEntity<T> publicResponse(T body) {
     return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body);
+  }
+
+  private static String language(String requested) {
+    return requested != null && requested.matches("fr|en") ? requested : null;
   }
 }

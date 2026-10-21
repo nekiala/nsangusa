@@ -41,16 +41,21 @@ class DltMetadataConsumer {
                 "kafka_dlt-key-exception-fqcn"),
             500);
     String category = textHeader(record, EventFailurePolicy.CATEGORY_HEADER);
+    // Replay targets the main topic and group, never the delayed-retry tier a record passed.
     String originalTopic =
-        defaultString(
-            bounded(
-                textHeader(
-                    record,
-                    "kafka_dlt-original-topic",
-                    "kafka_original-topic",
-                    "kafka_originalTopic"),
-                249),
-            stripDltSuffix(record.topic()));
+        DelayedRetryPolicy.baseTopic(
+            defaultString(
+                bounded(
+                    textHeader(
+                        record,
+                        "kafka_dlt-original-topic",
+                        "kafka_original-topic",
+                        "kafka_originalTopic"),
+                    249),
+                stripDltSuffix(record.topic())));
+    String consumerGroup =
+        bounded(textHeader(record, "kafka_dlt-original-consumer-group", "kafka_groupId"), 255);
+    String retryTwin = DelayedRetryPolicy.retryTwinOf(consumerGroup);
     int originalPartition =
         intHeader(
             record,
@@ -99,7 +104,7 @@ class DltMetadataConsumer {
             originalTopic,
             originalPartition,
             originalOffset,
-            bounded(textHeader(record, "kafka_dlt-original-consumer-group", "kafka_groupId"), 255),
+            retryTwin == null ? consumerGroup : retryTwin,
             payload,
             exceptionClass,
             EventFailurePolicy.safeMessage(category == null && poison ? "invalid" : category),

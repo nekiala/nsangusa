@@ -202,6 +202,12 @@ class ProductionEditorialProviderTests {
       draft.put(name, "A reported development");
     }
     draft.putNull("editorialContext");
+    var translation = draft.putObject("translation");
+    for (String name :
+        List.of("headline", "summary", "body", "seoTitle", "seoDescription", "imageAltText")) {
+      translation.put(name, "A reported development");
+    }
+    translation.putNull("editorialContext");
     draft.put("slugSuggestion", "reported-development");
     draft.putArray("tags").add("news");
     draft.putArray("sourceIds").add(sourceId.toString());

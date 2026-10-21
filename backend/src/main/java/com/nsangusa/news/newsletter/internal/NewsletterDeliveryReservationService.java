@@ -1,7 +1,11 @@
 package com.nsangusa.news.newsletter.internal;
 
+import com.nsangusa.news.eventprocessing.DurableEventPublisher;
+import com.nsangusa.news.integration.NewsEvents.NewsletterDelivered;
+import com.nsangusa.news.integration.NewsEvents.NewsletterDeliveryFailed;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +22,7 @@ class NewsletterDeliveryReservationService {
   private final Duration idempotencyWindow;
   private final Duration attemptLease;
   private final boolean providerSupportsIdempotency;
+  private final DurableEventPublisher events;
 
   NewsletterDeliveryReservationService(NewsletterDeliveryRepository deliveries) {
     this(deliveries, Duration.ofHours(24), Duration.ofMinutes(10));
@@ -30,7 +35,7 @@ class NewsletterDeliveryReservationService {
 
   NewsletterDeliveryReservationService(
       NewsletterDeliveryRepository deliveries, Duration idempotencyWindow, Duration attemptLease) {
-    this(deliveries, idempotencyWindow, attemptLease, true);
+    this(deliveries, idempotencyWindow, attemptLease, true, null);
   }
 
   @Autowired
@@ -38,8 +43,9 @@ class NewsletterDeliveryReservationService {
       NewsletterDeliveryRepository deliveries,
       @Value("${news.newsletter.idempotency-window:PT24H}") Duration idempotencyWindow,
       @Value("${news.newsletter.attempt-lease:PT10M}") Duration attemptLease,
-      EmailDeliveryProvider provider) {
-    this(deliveries, idempotencyWindow, attemptLease, provider.supportsIdempotency());
+      EmailDeliveryProvider provider,
+      DurableEventPublisher events) {
+    this(deliveries, idempotencyWindow, attemptLease, provider.supportsIdempotency(), events);
   }
 
   NewsletterDeliveryReservationService(
@@ -47,6 +53,15 @@ class NewsletterDeliveryReservationService {
       Duration idempotencyWindow,
       Duration attemptLease,
       boolean providerSupportsIdempotency) {
+    this(deliveries, idempotencyWindow, attemptLease, providerSupportsIdempotency, null);
+  }
+
+  NewsletterDeliveryReservationService(
+      NewsletterDeliveryRepository deliveries,
+      Duration idempotencyWindow,
+      Duration attemptLease,
+      boolean providerSupportsIdempotency,
+      DurableEventPublisher events) {
     if (idempotencyWindow.isNegative() || idempotencyWindow.isZero()) {
       throw new IllegalArgumentException("Newsletter idempotency window must be positive");
     }
@@ -64,6 +79,7 @@ class NewsletterDeliveryReservationService {
     this.idempotencyWindow = idempotencyWindow;
     this.attemptLease = attemptLease;
     this.providerSupportsIdempotency = providerSupportsIdempotency;
+    this.events = events;
   }
 
   @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -105,17 +121,59 @@ class NewsletterDeliveryReservationService {
         new DeliveryAttempt(delivery.id, attemptToken, delivery.providerIdempotencyKey));
   }
 
+  // Each outcome commits with its event in this transaction, independent of the dispatch loop.
   @Transactional(propagation = Propagation.REQUIRES_NEW)
-  void delivered(UUID deliveryId, UUID attemptToken, String providerMessageId) {
-    findLocked(deliveryId).delivered(attemptToken, providerMessageId);
+  void delivered(
+      UUID deliveryId,
+      UUID attemptToken,
+      String providerMessageId,
+      UUID correlationId,
+      UUID causationId) {
+    var delivery = findLocked(deliveryId);
+    if (delivery.delivered(attemptToken, providerMessageId)) {
+      publisher()
+          .enqueue(
+              "NewsletterDelivered",
+              delivery.id,
+              correlationId,
+              causationId,
+              "newsletter-delivered:" + delivery.id,
+              new NewsletterDelivered(
+                  delivery.id, delivery.articleId, delivery.campaignKey, delivery.deliveredAt));
+    }
   }
 
   @Transactional(propagation = Propagation.REQUIRES_NEW)
-  void failed(UUID deliveryId, UUID attemptToken, String failureCode) {
+  void failed(
+      UUID deliveryId,
+      UUID attemptToken,
+      String failureCode,
+      UUID correlationId,
+      UUID causationId) {
     var delivery = findLocked(deliveryId);
-    if (delivery.failed(attemptToken, failureCode) && !delivery.providerIdempotencyApplied) {
-      delivery.requireReconciliation("provider_acceptance_unknown");
+    if (delivery.failed(attemptToken, failureCode)) {
+      if (!delivery.providerIdempotencyApplied) {
+        delivery.requireReconciliation("provider_acceptance_unknown");
+      }
+      publisher()
+          .enqueue(
+              "NewsletterDeliveryFailed",
+              delivery.id,
+              correlationId,
+              causationId,
+              "newsletter-delivery-failed:" + delivery.id + ":" + attemptToken,
+              new NewsletterDeliveryFailed(
+                  delivery.id,
+                  delivery.articleId,
+                  delivery.campaignKey,
+                  failureCode,
+                  "reconciliation_required".equals(delivery.status),
+                  Instant.now()));
     }
+  }
+
+  private DurableEventPublisher publisher() {
+    return Objects.requireNonNull(events, "Delivery outcomes require the event publisher");
   }
 
   private NewsletterDelivery findLocked(UUID deliveryId) {

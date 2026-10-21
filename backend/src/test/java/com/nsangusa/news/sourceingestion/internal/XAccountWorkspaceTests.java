@@ -9,13 +9,16 @@ import com.nsangusa.news.sourceingestion.SourceIngestionService;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 
 class XAccountWorkspaceTests {
   @Test
   void productionCannotInjectSyntheticPosts() {
     var service = mock(SourceIngestionService.class);
-    var controller = new XAccountController(service, mock(XSourceProvider.class), "production");
+    var controller =
+        new XAccountController(service, mock(XSourceProvider.class), "production", false);
 
     assertThat(controller.capabilities().simulationEnabled()).isFalse();
     assertThatThrownBy(
@@ -30,6 +33,41 @@ class XAccountWorkspaceTests {
                 assertThat(((ResponseStatusException) error).getStatusCode().value())
                     .isEqualTo(403));
     verifyNoInteractions(service);
+  }
+
+  @Test
+  void liveXWithFakeProvidersCannotInjectSyntheticPosts() {
+    var controller =
+        new XAccountController(
+            mock(SourceIngestionService.class), mock(XSourceProvider.class), "fake", true);
+
+    assertThat(controller.capabilities().simulationEnabled()).isFalse();
+  }
+
+  @Test
+  void liveGateSelectsTheOfficialApiWithoutProductionProviderMode() {
+    var runner =
+        new ApplicationContextRunner()
+            .withBean(RestClient.Builder.class, RestClient::builder)
+            .withUserConfiguration(FakeXSourceProvider.class, OfficialXApiSourceProvider.class)
+            .withPropertyValues(
+                "spring.profiles.active=local",
+                "news.providers.mode=fake",
+                "news.x.api-base-url=https://api.x.com");
+
+    runner.run(
+        context ->
+            assertThat(context.getBean(XSourceProvider.class))
+                .isInstanceOf(FakeXSourceProvider.class));
+    runner
+        .withPropertyValues("news.x.live-enabled=true", "news.x.bearer-token=test-token")
+        .run(
+            context ->
+                assertThat(context.getBean(XSourceProvider.class))
+                    .isInstanceOf(OfficialXApiSourceProvider.class));
+    runner
+        .withPropertyValues("news.x.live-enabled=true", "news.x.bearer-token=")
+        .run(context -> assertThat(context).hasFailed());
   }
 
   @Test

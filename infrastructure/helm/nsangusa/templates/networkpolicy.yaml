@@ -40,6 +40,13 @@ spec:
               app.kubernetes.io/component: frontend
       ports:
         - {protocol: TCP, port: 8080}
+    {{- range .Values.networkPolicy.hostIngress }}
+    - from:
+        - ipBlock:
+            cidr: {{ .cidr | quote }}
+      ports:
+        - {protocol: TCP, port: 8080}
+    {{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -63,6 +70,13 @@ spec:
               {{- toYaml .Values.networkPolicy.ingressPodSelector | nindent 14 }}
       ports:
         - {protocol: TCP, port: 3000}
+    {{- range .Values.networkPolicy.hostIngress }}
+    - from:
+        - ipBlock:
+            cidr: {{ .cidr | quote }}
+      ports:
+        - {protocol: TCP, port: 3000}
+    {{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -157,6 +171,22 @@ spec:
       ports:
         - {protocol: TCP, port: 4317}
         - {protocol: TCP, port: 4318}
+    {{- end }}
+    {{- range .Values.networkPolicy.backendClusterEgress }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .namespaceSelector | nindent 14 }}
+          {{- with .podSelector }}
+          podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+      ports:
+        {{- range .ports }}
+        - protocol: {{ default "TCP" .protocol }}
+          port: {{ .port }}
+        {{- end }}
     {{- end }}
     {{- range .Values.networkPolicy.backendExternalEgress }}
     - to:

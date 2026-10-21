@@ -2,6 +2,12 @@ FROM eclipse-temurin:25.0.4_7-jre-noble@sha256:d120abd9d8d7dec94520ce974ece62d0e
 
 LABEL org.opencontainers.image.title="nsangusa-backend" \
       org.opencontainers.image.description="Nsangusa backend runtime"
+# CVE-2026-84782: Ubuntu fixed OpenSSL in 3.0.13-0ubuntu3.16, but no Temurin base image includes
+# it yet. Upgrade exactly these packages; remove this step once a pinned base ships the fix.
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends --only-upgrade \
+       libssl3t64=3.0.13-0ubuntu3.16 openssl=3.0.13-0ubuntu3.16 \
+    && rm -rf /var/lib/apt/lists/*
 RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --home-dir /app app
 WORKDIR /app

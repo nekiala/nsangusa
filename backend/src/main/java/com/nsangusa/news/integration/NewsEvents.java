@@ -112,7 +112,98 @@ public final class NewsEvents {
       @NotBlank @Size(max = 100) String promptVersion,
       @PositiveOrZero long inputTokens,
       @PositiveOrZero long outputTokens,
-      @NotNull Instant generatedAt) {
+      @NotNull Instant generatedAt,
+      @Pattern(regexp = "fr|en") String language,
+      @Size(max = 4) List<@Valid ArticleTranslation> translations) {
+    /** Drafts without a declared language or translations, as produced before bilingual drafts. */
+    public ArticleDraftGenerated(
+        UUID storyCandidateId,
+        String headline,
+        String summary,
+        String body,
+        String editorialContext,
+        String seoTitle,
+        String seoDescription,
+        String slugSuggestion,
+        Set<String> tags,
+        String topic,
+        List<SourceReference> sources,
+        List<Claim> claims,
+        BigDecimal confidence,
+        List<String> uncertaintyNotes,
+        List<String> safetyFlags,
+        boolean humanReviewRequired,
+        String imagePrompt,
+        String imageAltText,
+        String socialPreviewText,
+        String provider,
+        String model,
+        String promptVersion,
+        long inputTokens,
+        long outputTokens,
+        Instant generatedAt) {
+      this(
+          storyCandidateId,
+          headline,
+          summary,
+          body,
+          editorialContext,
+          seoTitle,
+          seoDescription,
+          slugSuggestion,
+          tags,
+          topic,
+          sources,
+          claims,
+          confidence,
+          uncertaintyNotes,
+          safetyFlags,
+          humanReviewRequired,
+          imagePrompt,
+          imageAltText,
+          socialPreviewText,
+          provider,
+          model,
+          promptVersion,
+          inputTokens,
+          outputTokens,
+          generatedAt,
+          null,
+          null);
+    }
+
+    public ArticleDraftGenerated withLanguages(
+        String language, List<ArticleTranslation> translations) {
+      return new ArticleDraftGenerated(
+          storyCandidateId,
+          headline,
+          summary,
+          body,
+          editorialContext,
+          seoTitle,
+          seoDescription,
+          slugSuggestion,
+          tags,
+          topic,
+          sources,
+          claims,
+          confidence,
+          uncertaintyNotes,
+          safetyFlags,
+          humanReviewRequired,
+          imagePrompt,
+          imageAltText,
+          socialPreviewText,
+          provider,
+          model,
+          promptVersion,
+          inputTokens,
+          outputTokens,
+          generatedAt,
+          language,
+          translations);
+    }
+
     public ArticleDraftGenerated(
         UUID storyCandidateId,
         String headline,
@@ -238,6 +329,62 @@ public final class NewsEvents {
 
   public record CommentSubmitted(
       @NotNull UUID commentId, @NotNull UUID articleId, @NotNull UUID authorId) {}
+
+  /** An administrator added or resumed monitoring; consumed to run that account's first sync. */
+  public record XAccountMonitoringRequested(
+      @NotNull UUID monitoredAccountId,
+      @NotBlank @Pattern(regexp = "\\d{1,30}") String accountId,
+      @NotBlank @Pattern(regexp = "[A-Za-z0-9_]{1,15}") String handle,
+      @NotBlank @Pattern(regexp = "added|resumed") String reason,
+      @NotNull Instant requestedAt) {}
+
+  public record StoryCandidateCreated(
+      @NotNull UUID storyCandidateId,
+      @NotNull UUID primarySourcePostId,
+      @NotBlank @Size(max = 100) String topic,
+      @Size(max = 100) String conversationId,
+      @NotNull Instant createdAt) {}
+
+  public record StoryAnalysisCompleted(
+      @NotNull UUID storyCandidateId,
+      @NotNull @DecimalMin("0") @DecimalMax("1") BigDecimal confidence,
+      @NotNull @PositiveOrZero Integer claimCount,
+      @NotNull @Size(max = 50) List<@NotBlank @Size(max = 500) String> warnings,
+      @NotBlank @Size(max = 100) String provider,
+      @NotBlank @Size(max = 100) String model,
+      @NotBlank @Size(max = 100) String promptVersion,
+      @NotNull Instant completedAt) {}
+
+  public record ArticleScheduled(
+      @NotNull UUID articleId,
+      @NotNull UUID scheduleId,
+      @NotNull Instant publishAt,
+      @NotNull @PositiveOrZero Long articleVersion,
+      @NotNull UUID scheduledBy) {}
+
+  /** Delivery facts identify the delivery and campaign only, never the subscriber address. */
+  public record NewsletterDelivered(
+      @NotNull UUID deliveryId,
+      @NotNull UUID articleId,
+      @NotBlank @Size(max = 200) String campaignKey,
+      @NotNull Instant deliveredAt) {}
+
+  public record NewsletterDeliveryFailed(
+      @NotNull UUID deliveryId,
+      @NotNull UUID articleId,
+      @NotBlank @Size(max = 200) String campaignKey,
+      @NotBlank @Size(max = 100) String failureCode,
+      @NotNull Boolean reconciliationRequired,
+      @NotNull Instant failedAt) {}
+
+  /** Moderator reasons are free text and stay in the audit trail, not in events. */
+  public record CommentModerated(
+      @NotNull UUID commentId,
+      @NotNull UUID articleId,
+      @NotBlank @Pattern(regexp = "pending|approved|rejected|spam") String previousState,
+      @NotBlank @Pattern(regexp = "approved|rejected|spam|deleted") String decision,
+      @NotNull UUID moderatorId,
+      @NotNull Instant moderatedAt) {}
 
   public record SourceReference(
       @NotNull UUID sourcePostId,

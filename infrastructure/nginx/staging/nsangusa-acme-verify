@@ -1,53 +1,44 @@
-#!/usr/bin/python3
-"""Fail renewal if Nginx is not serving the current, trusted staging certificate."""
-import hashlib
-from pathlib import Path
-import socket
-import ssl
-import time
+#!/bin/sh
+# Fail renewal if Nginx is not serving the current, trusted staging certificate.
+# NSANGUSA_ACME_CERTIFICATE, NSANGUSA_ACME_PORT and NSANGUSA_ACME_CA_FILE exist only for the
+# repository's local TLS fixture tests; the renewal unit never sets them.
+set -eu
+umask 077
 
+host=staging.nsangusa.com
+certificate=${NSANGUSA_ACME_CERTIFICATE:-/etc/nsangusa-acme/live/$host/cert.pem}
+port=${NSANGUSA_ACME_PORT:-443}
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+trap 'exit 1' INT TERM
 
-HOST = "staging.nsangusa.com"
-CERTIFICATE = Path("/etc/nsangusa-acme/live/staging.nsangusa.com/cert.pem")
+fingerprint() {
+  openssl x509 -in "$1" -outform DER | openssl dgst -sha256 -r | cut -d ' ' -f 1
+}
 
+expected=$(fingerprint "$certificate")
+limit=
+if command -v timeout >/dev/null 2>&1; then limit="timeout 3"; fi
 
-class CertificateNotReady(Exception):
-    pass
+probe() {
+  rm -f "$work/served.pem"
+  # Chain trust, hostname and protocol floor are enforced by the handshake itself.
+  $limit openssl s_client -connect "127.0.0.1:$port" -servername "$host" \
+    -verify_hostname "$host" -verify_return_error -no_ssl3 -no_tls1 -no_tls1_1 "$@" \
+    </dev/null 2>/dev/null | openssl x509 -out "$work/served.pem" 2>/dev/null || return 1
+  [ "$(fingerprint "$work/served.pem")" = "$expected" ] || return 1
+  openssl x509 -in "$work/served.pem" -noout -checkend 604800 >/dev/null
+}
 
-
-def check_certificate(expected, actual, not_after, now):
-    if actual != expected:
-        raise CertificateNotReady("Nginx is not serving the current certificate")
-    if ssl.cert_time_to_seconds(not_after) <= now + 604800:
-        raise CertificateNotReady("Served certificate expires within seven days")
-
-
-def probe(context, expected):
-    with socket.create_connection(("127.0.0.1", 443), timeout=3) as connection:
-        with context.wrap_socket(connection, server_hostname=HOST) as stream:
-            check_certificate(expected, stream.getpeercert(binary_form=True),
-                              stream.getpeercert()["notAfter"], time.time())
-
-
-def wait_for_certificate(context, expected):
-    for attempt in range(10):
-        try:
-            probe(context, expected)
-            return
-        except (OSError, CertificateNotReady) as error:
-            if attempt == 9:
-                raise RuntimeError("Staging certificate activation failed") from error
-            time.sleep(1)
-
-
-def main():
-    expected = ssl.PEM_cert_to_DER_cert(CERTIFICATE.read_text())
-    context = ssl.create_default_context()
-    context.minimum_version = ssl.TLSVersion.TLSv1_2
-    wait_for_certificate(context, expected)
-    print("Nginx serves the current trusted staging certificate: SHA256 "
-          + hashlib.sha256(expected).hexdigest())
-
-
-if __name__ == "__main__":
-    main()
+if [ -n "${NSANGUSA_ACME_CA_FILE:-}" ]; then set -- -CAfile "$NSANGUSA_ACME_CA_FILE"; else set --; fi
+attempt=1
+until probe "$@"; do
+  if [ "$attempt" -ge 10 ]; then
+    echo "Staging certificate activation failed: Nginx is not serving the current trusted certificate" \
+      "valid for more than seven days" >&2
+    exit 1
+  fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+echo "Nginx serves the current trusted staging certificate: SHA256 $expected"
