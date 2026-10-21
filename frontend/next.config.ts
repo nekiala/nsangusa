@@ -6,6 +6,14 @@ const nextConfig: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   turbopack: { root: __dirname },
   allowedDevOrigins: ["127.0.0.1"],
+  // English pages live under /en and are served by the same routes; the proxy records the locale.
+  async rewrites() {
+    return { beforeFiles: [{ source: "/en", destination: "/" }, { source: "/en/:path*", destination: "/:path*" }], afterFiles: [], fallback: [] };
+  },
+  // French, the default language, has one address: the unprefixed one.
+  async redirects() {
+    return [{ source: "/fr", destination: "/", permanent: true }, { source: "/fr/:path*", destination: "/:path*", permanent: true }];
+  },
   async headers() {
     return [{
       source: "/(.*)",
@@ -16,25 +24,25 @@ const nextConfig: NextConfig = {
         { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" }
       ]
     }, {
-      source: "/newsletter/:path*",
+      source: "/:locale(en)?/newsletter/:path*",
       headers: [{ key: "Cache-Control", value: "private, no-store" }, { key: "Referrer-Policy", value: "no-referrer" }]
     }, {
-      source: "/:path(robots.txt|rss.xml|sitemap.xml)",
+      source: "/:locale(en)?/:path(robots.txt|rss.xml|sitemap.xml)",
       headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }]
     }, {
       source: "/sitemaps/:path*",
       headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }]
     }, {
-      source: "/articles/:path*",
+      source: "/:locale(en)?/articles/:path*",
       headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }]
     }, {
-      source: "/admin/:path*",
+      source: "/:locale(en)?/admin/:path*",
       headers: [{ key: "Cache-Control", value: "private, no-store" }]
     }, {
-      source: "/:path(sign-in|register|password-reset|profile|verify-email)",
+      source: "/:locale(en)?/:path(sign-in|register|password-reset|profile|verify-email)",
       headers: [{ key: "Cache-Control", value: "private, no-store" }, { key: "Referrer-Policy", value: "no-referrer" }]
     }, {
-      source: "/password-reset/:path*",
+      source: "/:locale(en)?/password-reset/:path*",
       headers: [{ key: "Cache-Control", value: "private, no-store" }, { key: "Referrer-Policy", value: "no-referrer" }]
     }];
   }

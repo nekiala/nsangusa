@@ -61,7 +61,7 @@ class NewsletterConfirmationDeliveryTests {
     bodies(message, bodies);
     var link =
         java.util.regex.Pattern.compile(
-                "https://news\\.example\\.test/newsletter/confirm\\?id="
+                "https://news\\.example\\.test/en/newsletter/confirm\\?id="
                     + requested.subscriptionId()
                     + "&token=([A-Za-z0-9_-]+)")
             .matcher(bodies.getFirst());

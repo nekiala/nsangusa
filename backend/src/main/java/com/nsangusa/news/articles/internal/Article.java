@@ -101,6 +101,14 @@ class Article {
   @OrderBy("publishedAt asc")
   List<ArticleSource> sources = new ArrayList<>();
 
+  /** The language the article was written in; translations cover the others. */
+  @Column(nullable = false)
+  String language = "en";
+
+  @OneToMany(mappedBy = "article", cascade = CascadeType.ALL, orphanRemoval = true)
+  @OrderBy("language asc")
+  List<ArticleTranslationEntity> translations = new ArrayList<>();
+
   @OneToMany(mappedBy = "article", cascade = CascadeType.ALL, orphanRemoval = true)
   @OrderBy("revisionNumber asc")
   List<ArticleRevision> revisions = new ArrayList<>();
@@ -136,6 +144,23 @@ class Article {
             .collect(java.util.stream.Collectors.joining("\n"));
     article.createdAt = draft.generatedAt();
     article.updatedAt = draft.generatedAt();
+    if (draft.language() != null) {
+      article.language = draft.language();
+    }
+    if (draft.translations() != null) {
+      for (var translation : draft.translations()) {
+        article.putTranslation(
+            new com.nsangusa.news.articles.ArticleService.TranslationView(
+                translation.language(),
+                translation.headline(),
+                translation.summary(),
+                translation.body(),
+                translation.editorialContext(),
+                translation.seoTitle(),
+                translation.seoDescription(),
+                translation.imageAltText()));
+      }
+    }
     draft
         .sources()
         .forEach(
@@ -206,6 +231,17 @@ class Article {
           "Published, unpublished, scheduled or archived articles cannot be edited directly");
     }
     apply(command);
+    if (command.translations() != null) {
+      var kept =
+          command.translations().stream()
+              .map(com.nsangusa.news.articles.ArticleService.TranslationView::language)
+              .collect(java.util.stream.Collectors.toSet());
+      if (kept.size() != command.translations().size()) {
+        throw new IllegalArgumentException("Article translations must have distinct languages");
+      }
+      translations.removeIf(translation -> !kept.contains(translation.language));
+      command.translations().forEach(this::putTranslation);
+    }
     replaceSources(command.sources());
     state = ArticleState.AWAITING_REVIEW;
     approvedBy = null;
@@ -238,6 +274,11 @@ class Article {
   void imageCandidateReady(UUID generationId) {
     if (state == ArticleState.ARCHIVED || state == ArticleState.REJECTED) {
       throw new IllegalStateException("Rejected or archived articles cannot regenerate images");
+    }
+    // Candidate and approval events reach separate consumers in either order; a late candidate
+    // for the image already approved must not reopen review or change the article version.
+    if (generationId.equals(approvedImageGenerationId)) {
+      return;
     }
     pendingImageGenerationId = generationId;
     if (approvedImageGenerationId == null) {
@@ -394,6 +435,44 @@ class Article {
         publishedAt,
         updatedAt,
         effectiveContent());
+  }
+
+  /** Adds or replaces the translation for one language other than the article's own. */
+  private void putTranslation(com.nsangusa.news.articles.ArticleService.TranslationView view) {
+    if (view.language() == null
+        || !view.language().matches("fr|en")
+        || view.language().equals(language)) {
+      throw new IllegalArgumentException("A translation needs a supported, non-primary language");
+    }
+    for (String value :
+        java.util.Arrays.asList(
+            view.headline(), view.summary(), view.body(), view.seoTitle(), view.seoDescription())) {
+      if (value == null
+          || value.isBlank()
+          || value.contains("<script")
+          || value.contains("javascript:")) {
+        throw new IllegalArgumentException("Translation content is blank or unsafe");
+      }
+    }
+    var translation =
+        translations.stream()
+            .filter(existing -> existing.language.equals(view.language()))
+            .findFirst()
+            .orElseGet(
+                () -> {
+                  var created = new ArticleTranslationEntity(this, view.language());
+                  translations.add(created);
+                  return created;
+                });
+    translation.headline = view.headline().trim();
+    translation.summary = view.summary().trim();
+    translation.body = view.body().trim();
+    translation.editorialContext =
+        view.editorialContext() == null ? null : view.editorialContext().trim();
+    translation.seoTitle = view.seoTitle().trim();
+    translation.seoDescription = view.seoDescription().trim();
+    translation.imageAltText = view.imageAltText() == null ? null : view.imageAltText().trim();
+    translation.updatedAt = Instant.now();
   }
 
   ArticleContent effectiveContent() {

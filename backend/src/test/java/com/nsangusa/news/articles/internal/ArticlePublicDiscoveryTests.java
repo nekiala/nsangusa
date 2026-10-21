@@ -191,7 +191,8 @@ class ArticlePublicDiscoveryTests {
     assertThatThrownBy(() -> search.byTag("shared", 10_001, 20))
         .isInstanceOf(IllegalArgumentException.class);
     var controller = new ArticleController(articles, null, null);
-    assertThat(controller.published(0, 20).getHeaders().getCacheControl()).isEqualTo("no-store");
+    assertThat(controller.published(0, 20, null).getHeaders().getCacheControl())
+        .isEqualTo("no-store");
   }
 
   private Article seed(int sequence, String topic, String tags) {

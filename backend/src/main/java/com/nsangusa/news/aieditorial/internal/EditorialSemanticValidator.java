@@ -105,6 +105,7 @@ class EditorialSemanticValidator {
             .filter(Objects::nonNull)
             .toList(),
         material.values());
+    quotations(EditorialWorkflowConsumer.translatedText(draft), material.values());
     limitCopying(draft.body(), material.values());
   }
 

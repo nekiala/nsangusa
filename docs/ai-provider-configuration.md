@@ -128,6 +128,9 @@ Application semantic/source validation and mandatory human publication review st
 settings; GPT-5 mini is not an image-generation model. This workspace neither configures
 that adapter nor shares its encrypted key with it. Live images require their existing
 operator-managed `IMAGE_API_KEY`, image model/endpoint, and provider-mode settings.
+The live image adapter also makes one web-search text call per image to identify the public
+figures a brief names ([ADR-018](adrs.md#adr-018-illustrate-the-public-figures-a-story-is-about));
+`IMAGE_SUBJECT_LOOKUP_ENABLED=false` turns it off.
 Status explicitly labels both image and X-source provider modes independently of text AI,
 including their simulated status when the global provider mode is fake.
 Do not enable unrelated live providers merely to enable text AI. Generated/fallback

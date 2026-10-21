@@ -52,26 +52,31 @@ class ArticleController {
   }
 
   @GetMapping("/articles/{slug}")
-  ResponseEntity<ArticleView> article(@PathVariable String slug) {
+  ResponseEntity<ArticleView> article(
+      @PathVariable String slug, @RequestParam(required = false) String lang) {
     return ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())
-        .body(articles.getPublishedBySlug(slug));
+        .body(articles.getPublishedBySlug(slug, language(lang)));
   }
 
   @GetMapping("/articles/discovery")
   ResponseEntity<ArticleService.PublicArticlePage> published(
-      @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "20") int size,
+      @RequestParam(required = false) String lang) {
     return ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())
-        .body(articles.published(page, size));
+        .body(articles.published(page, size, language(lang)));
   }
 
   @GetMapping("/articles/{slug}/related")
   ResponseEntity<List<ArticleService.ArticleSummary>> related(
-      @PathVariable String slug, @RequestParam(defaultValue = "3") int limit) {
+      @PathVariable String slug,
+      @RequestParam(defaultValue = "3") int limit,
+      @RequestParam(required = false) String lang) {
     return ResponseEntity.ok()
         .cacheControl(CacheControl.noStore())
-        .body(articles.related(slug, limit));
+        .body(articles.related(slug, limit, language(lang)));
   }
 
   @GetMapping("/articles/{slug}/image")
@@ -378,6 +383,33 @@ class ArticleController {
 
   record EventResponse(UUID eventId) {}
 
+  /** Unsupported or absent language requests fall back to each article's own language. */
+  private static String language(String requested) {
+    return requested != null && requested.matches("fr|en") ? requested : null;
+  }
+
+  record TranslationRequest(
+      @NotBlank @jakarta.validation.constraints.Pattern(regexp = "fr|en") String language,
+      @NotBlank @Size(max = 300) String headline,
+      @NotBlank @Size(max = 2_000) String summary,
+      @NotBlank @Size(max = 100_000) String body,
+      @Size(max = 20_000) String editorialContext,
+      @NotBlank @Size(max = 300) String seoTitle,
+      @NotBlank @Size(max = 500) String seoDescription,
+      @Size(max = 500) String imageAltText) {
+    ArticleService.TranslationView toView() {
+      return new ArticleService.TranslationView(
+          language,
+          headline,
+          summary,
+          body,
+          editorialContext,
+          seoTitle,
+          seoDescription,
+          imageAltText);
+    }
+  }
+
   private static UUID actorId(Principal principal) {
     return UUID.nameUUIDFromBytes(
         principal.getName().getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -395,7 +427,37 @@ class ArticleController {
       @NotEmpty Set<@NotBlank String> tags,
       @NotEmpty @Size(max = 50) List<@NotNull @Valid SourceView> sources,
       boolean commentsEnabled,
-      @Valid com.nsangusa.news.articles.ArticleContent content) {
+      @Valid com.nsangusa.news.articles.ArticleContent content,
+      @Size(max = 4) List<@NotNull @Valid TranslationRequest> translations) {
+    ArticleCommandRequest(
+        String headline,
+        String summary,
+        String body,
+        String editorialContext,
+        String seoTitle,
+        String seoDescription,
+        String slugSuggestion,
+        String topic,
+        Set<String> tags,
+        List<SourceView> sources,
+        boolean commentsEnabled,
+        com.nsangusa.news.articles.ArticleContent content) {
+      this(
+          headline,
+          summary,
+          body,
+          editorialContext,
+          seoTitle,
+          seoDescription,
+          slugSuggestion,
+          topic,
+          tags,
+          sources,
+          commentsEnabled,
+          content,
+          null);
+    }
+
     ArticleCommandRequest(
         String headline,
         String summary,
@@ -441,7 +503,10 @@ class ArticleController {
           tags,
           sources,
           commentsEnabled,
-          content);
+          content,
+          translations == null
+              ? null
+              : translations.stream().map(TranslationRequest::toView).toList());
     }
   }
 

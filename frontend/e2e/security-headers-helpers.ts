@@ -1,4 +1,5 @@
-import { expect, type Page, type Response } from "@playwright/test";
+import { expect } from "./english";
+import { type Page, type Response } from "@playwright/test";
 
 function nonceFrom(policy: string) {
   const nonce = policy.match(/'nonce-([A-Za-z0-9+/=]+)'/)?.[1];

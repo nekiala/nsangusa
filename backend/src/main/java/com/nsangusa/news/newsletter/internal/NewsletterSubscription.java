@@ -41,6 +41,10 @@ class NewsletterSubscription {
   Instant unsubscribedAt;
   UUID userId;
 
+  /** Language of the emails this subscriber receives. */
+  @jakarta.persistence.Column(nullable = false)
+  String language = "en";
+
   @Version long version;
 
   protected NewsletterSubscription() {}

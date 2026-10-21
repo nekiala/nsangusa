@@ -260,10 +260,10 @@ jobs:
       - name: Require isolated recovery and monitoring exercises
         run: |
           docker info > /dev/null
-          python3 -m unittest discover -s infrastructure/scripts -p 'test_*.py'
-          python3 infrastructure/scripts/operational-drill.py \
+          node --test infrastructure/scripts/*.test.mjs
+          node infrastructure/scripts/operational-drill.mjs \
             --output .local/operational-evidence/ci-recovery
-          python3 infrastructure/scripts/test-monitoring.py \
+          node infrastructure/scripts/test-monitoring.mjs \
             --output .local/operational-evidence/ci-monitoring.json
       - name: Retain non-secret operational evidence
         if: ${{ always() }}

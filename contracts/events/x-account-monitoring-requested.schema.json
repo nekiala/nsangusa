@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.nsangusa.invalid/events/x-account-monitoring-requested.schema.json",
+  "title": "XAccountMonitoringRequested",
+  "allOf": [
+    {
+      "$ref": "envelope.schema.json"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "const": "XAccountMonitoringRequested"
+        },
+        "schemaVersion": {
+          "const": 1
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "monitoredAccountId",
+            "accountId",
+            "handle",
+            "reason",
+            "requestedAt"
+          ],
+          "properties": {
+            "monitoredAccountId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "accountId": {
+              "type": "string",
+              "pattern": "^[0-9]{1,30}$"
+            },
+            "handle": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_]{1,15}$"
+            },
+            "reason": {
+              "type": "string",
+              "enum": [
+                "added",
+                "resumed"
+              ]
+            },
+            "requestedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

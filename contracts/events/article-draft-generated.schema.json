@@ -66,7 +66,10 @@
               "pattern": "\\S"
             },
             "editorialContext": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "maxLength": 5000
             },
             "seoTitle": {
@@ -196,6 +199,89 @@
             "generatedAt": {
               "type": "string",
               "format": "date-time"
+            },
+            "language": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "fr",
+                "en",
+                null
+              ]
+            },
+            "translations": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "maxItems": 4,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "language",
+                  "headline",
+                  "summary",
+                  "body",
+                  "seoTitle",
+                  "seoDescription",
+                  "imageAltText"
+                ],
+                "properties": {
+                  "language": {
+                    "type": "string",
+                    "enum": [
+                      "fr",
+                      "en"
+                    ]
+                  },
+                  "headline": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300,
+                    "pattern": "\\S"
+                  },
+                  "summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000,
+                    "pattern": "\\S"
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 30000,
+                    "pattern": "\\S"
+                  },
+                  "editorialContext": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 5000
+                  },
+                  "seoTitle": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300,
+                    "pattern": "\\S"
+                  },
+                  "seoDescription": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "pattern": "\\S"
+                  },
+                  "imageAltText": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "pattern": "\\S"
+                  }
+                }
+              }
             }
           }
         }
